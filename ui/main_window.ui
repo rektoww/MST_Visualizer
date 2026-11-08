@@ -38,6 +38,67 @@
         <property name="title">
          <string>Управление</string>
         </property>
+        <layout class="QVBoxLayout" name="verticalLayout">
+         <item>
+          <widget class="QLabel" name="labelAlgorithm">
+           <property name="text">
+            <string>Алгоритм построения</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="comboAlgorithm">
+           <property name="currentIndex">
+            <number>-1</number>
+           </property>
+           <item>
+            <property name="text">
+             <string>Алгоритм Краскала</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Алгоритм Прима</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnBuildMst">
+           <property name="text">
+            <string>Построить остов</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnStepMode">
+           <property name="text">
+            <string>Пошаговый режим</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnGenerateGraph">
+           <property name="text">
+            <string>Случайный граф</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelTotalWeight">
+           <property name="text">
+            <string>Общий вес: —</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelSelectedEdges">
+           <property name="text">
+            <string>Выбрано рёбер: 0</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </widget>
       </item>
      </layout>
