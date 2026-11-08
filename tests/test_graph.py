@@ -50,7 +50,7 @@ def test_missing_end_vertex():
     graph = Graph()
     graph.add_vertex(1)
 
-    with pytest.raises(VertexNotFoundError, match="^Ошибка: Вершина 2 не найдена"):
+    with pytest.raises(VertexNotFoundError, match="^Ошибка: Вершина 2 не найдена$"):
         graph.add_edge(1, 2, 5)
 
 
