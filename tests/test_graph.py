@@ -103,3 +103,15 @@ def test_error_inheritance():
     assert issubclass(GraphError, ValueError)
     assert issubclass(VertexAlreadyExistsError, GraphError)
     assert issubclass(VertexNotFoundError, GraphError)
+
+def test_has_edge():
+    graph = Graph()
+    graph.add_vertex(1)
+    graph.add_vertex(2)
+
+    assert graph.has_edge(1, 2) is False
+
+    graph.add_edge(1, 2, 5)
+
+    assert graph.has_edge(1, 2) is True
+    assert graph.has_edge(2, 1) is True

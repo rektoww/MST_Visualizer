@@ -85,6 +85,13 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="btnClearCanvas">
+           <property name="text">
+            <string>Очистить полотно</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QLabel" name="labelTotalWeight">
            <property name="text">
             <string>Общий вес: —</string>

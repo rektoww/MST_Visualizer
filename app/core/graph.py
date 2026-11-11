@@ -45,3 +45,7 @@ class Graph:
 
         self._edges[key] = Edge(first, second, float(weight))
 
+    def has_edge(self, start: int, end: int) -> bool:
+        first, second = sorted((start, end))
+        return (first, second) in self._edges
+
