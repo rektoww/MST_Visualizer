@@ -2,7 +2,7 @@ from math import isfinite
 
 from app.core.edge import Edge
 
-from app.core.exceptions import *
+from app.core.exceptions import GraphError, VertexAlreadyExistsError, VertexNotFoundError
 
 class Graph:
     def __init__(self) -> None:
@@ -48,4 +48,34 @@ class Graph:
     def has_edge(self, start: int, end: int) -> bool:
         first, second = sorted((start, end))
         return (first, second) in self._edges
+
+    def remove_vertex(self, vertex_id: int) -> None:
+        if vertex_id not in self._vertices:
+            raise VertexNotFoundError(f"Вершина {vertex_id} не найдена")
+
+        self._vertices.remove(vertex_id)
+
+        for key in tuple(self._edges):
+            if vertex_id in key:
+                del self._edges[key]
+
+    def remove_edge(self, start: int, end: int) -> None:
+        key = tuple(sorted((start, end)))
+
+        if key not in self._edges:
+            raise GraphError("Ребро не найдено")
+
+        del self._edges[key]
+
+    def set_edge_weight(self, start: int, end: int, weight: float) -> None:
+        key = tuple(sorted((start, end)))
+
+        if key not in self._edges:
+            raise GraphError("Ребро не найдено")
+
+        if not isfinite(weight):
+            raise GraphError("Вес должен быть конечным числом")
+
+        self._edges[key] = Edge(key[0], key[1], float(weight))
+
 

@@ -71,13 +71,6 @@
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnStepMode">
-           <property name="text">
-            <string>Пошаговый режим</string>
-           </property>
-          </widget>
-         </item>
-         <item>
           <widget class="QPushButton" name="btnShowOriginalGraph">
            <property name="text">
             <string>Отобразить исходный граф</string>
@@ -96,6 +89,95 @@
            <property name="text">
             <string>Очистить полотно</string>
            </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QGroupBox" name="groupStepControls">
+           <property name="styleSheet">
+            <string notr="true">QGroupBox#groupStepControls {
+    border: none;
+    margin: 0px;
+    padding: 0px;
+}</string>
+           </property>
+           <property name="title">
+            <string/>
+           </property>
+           <layout class="QGridLayout" name="gridLayout">
+            <item row="0" column="0" colspan="2">
+             <widget class="QPushButton" name="btnStepMode">
+              <property name="text">
+               <string>Пошаговый режим</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QPushButton" name="btnPreviousStep">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string>	◀ Назад</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="label">
+              <property name="text">
+               <string>Скорость</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QPushButton" name="btnNextStep">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string>Следующий шаг ▶</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QComboBox" name="comboPlaybackSpeed">
+              <property name="currentIndex">
+               <number>1</number>
+              </property>
+              <item>
+               <property name="text">
+                <string>0.5×</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>1×</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>2×</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+            <item row="3" column="0" colspan="2">
+             <widget class="QPushButton" name="btnPlayPause">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string>▶ Воспроизвести</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="0" colspan="2">
+             <widget class="QProgressBar" name="progressSteps">
+              <property name="value">
+               <number>0</number>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </item>
          <item>

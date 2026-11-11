@@ -115,3 +115,22 @@ def test_has_edge():
 
     assert graph.has_edge(1, 2) is True
     assert graph.has_edge(2, 1) is True
+
+def test_edit_and_remove_edges():
+    graph = Graph()
+    graph.add_vertex(1)
+    graph.add_vertex(2)
+    graph.add_vertex(3)
+
+    graph.add_edge(1, 2, 5)
+    graph.add_edge(2, 3, 7)
+
+    graph.set_edge_weight(1, 2, -3)
+    assert Edge(1, 2, -3.0) in graph.edges
+
+    graph.remove_edge(1, 2)
+    assert graph.has_edge(1, 2) is False
+
+    graph.remove_vertex(2)
+    assert 2 not in graph.vertices
+    assert graph.edges == ()
