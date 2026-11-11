@@ -23,10 +23,10 @@ def kruskal(graph: Graph) -> MSTResult:
             selected_edges.append(edge)
             total_weight += edge.weight
 
-            if len(selected_edges) == len(graph.edges) - 1:
+            if len(selected_edges) == len(graph.vertices) - 1:
                 break
 
-    if len(selected_edges) == len(graph.vertices) - 1:
+    if len(selected_edges) != len(graph.vertices) - 1:
         raise GraphError("Невозможно построить остов: граф несвязный")
 
     return MSTResult(tuple(selected_edges), total_weight, tuple(steps))
