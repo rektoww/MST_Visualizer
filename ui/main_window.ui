@@ -78,6 +78,13 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="btnShowOriginalGraph">
+           <property name="text">
+            <string>Отобразить исходный граф</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QPushButton" name="btnGenerateGraph">
            <property name="text">
             <string>Случайный граф</string>

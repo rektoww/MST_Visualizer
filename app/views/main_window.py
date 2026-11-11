@@ -8,6 +8,9 @@ from app.core.graph import Graph
 from app.views.graph_scene import GraphScene
 from app.core.exceptions import GraphError
 
+from app.core.algorithms.kruskal import kruskal
+from app.core.algorithms.prim import prim
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -39,6 +42,14 @@ class MainWindow(QMainWindow):
         self.graph_scene.empty_space_clicked.connect(self.add_vertex_at)
         self.btnClearCanvas.clicked.connect(self.clear_canvas)
 
+        self.last_result = None
+
+        self.btnBuildMst.setEnabled(True)
+        self.btnShowOriginalGraph.setEnabled(False)
+
+        self.btnBuildMst.clicked.connect(self.build_mst)
+        self.btnShowOriginalGraph.clicked.connect(self.show_original_graph)
+
         self.statusBar().showMessage("Готово к работе")
 
     def on_algorithm_changed(self, algorithm: str) -> None:
@@ -48,6 +59,8 @@ class MainWindow(QMainWindow):
         if not self.graph_scene.can_place_vertex(pos):
             self.statusBar().showMessage("Слишком близко к другой вершине")
             return
+
+        self.invalidate_mst()
 
         vertex_id = max(self.graph.vertices, default=0) + 1
 
@@ -93,6 +106,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка добавления ребра", str(error))
             return
 
+        self.invalidate_mst()
         self.graph_scene.add_edge(first, vertex_id, weight)
         self.statusBar().showMessage(f"Добавлено ребро {first}–{vertex_id}, вес {weight:g}")
 
@@ -135,4 +149,41 @@ class MainWindow(QMainWindow):
         self.pending_vertex = None
         self.graphView.resetTransform()
 
+        self.last_result = None
+        self.btnShowOriginalGraph.setEnabled(False)
+
         self.statusBar().showMessage("Полотно очищено")
+
+    def build_mst(self) -> None:
+        algorithm_index = self.comboAlgorithm.currentIndex()
+
+        if algorithm_index not in (0, 1):
+            QMessageBox.warning(self, "Алгоритм не выбран", "Сначала выберите алгоритм")
+            return
+
+        try:
+            if algorithm_index == 0:
+                result = kruskal(self.graph)
+            else:
+                result = prim(self.graph)
+        except GraphError as error:
+            QMessageBox.warning(self, "Построение остова", str(error))
+            return
+
+        self.last_result = result
+        self.graph_scene.show_mst(result.edges)
+        self.btnShowOriginalGraph.setEnabled(True)
+
+        self.statusBar().showMessage(
+            f"Остов построен. Рёбер: {len(result.edges)}, общий вес: {result.total_weight:g}"
+        )
+
+    def show_original_graph(self) -> None:
+        self.graph_scene.show_original_graph()
+        self.btnShowOriginalGraph.setEnabled(False)
+        self.statusBar().showMessage("Показан исходный граф")
+
+    def invalidate_mst(self) -> None:
+        self.last_result = None
+        self.graph_scene.show_original_graph()
+        self.btnShowOriginalGraph.setEnabled(False)
