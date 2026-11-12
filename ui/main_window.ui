@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>806</width>
+    <width>810</width>
     <height>615</height>
    </rect>
   </property>
@@ -18,13 +18,154 @@
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout">
       <item>
-       <widget class="QGraphicsView" name="graphView">
-        <property name="minimumSize">
-         <size>
-          <width>500</width>
-          <height>350</height>
-         </size>
+       <widget class="QTabWidget" name="tabGraphEditor">
+        <property name="currentIndex">
+         <number>1</number>
         </property>
+        <widget class="QWidget" name="tabCanvas">
+         <attribute name="title">
+          <string>Полотно</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="layoutCanvasTab">
+          <item>
+           <widget class="QGraphicsView" name="graphView">
+            <property name="minimumSize">
+             <size>
+              <width>500</width>
+              <height>350</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="tabTables">
+         <attribute name="title">
+          <string>Таблицы</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="layoutTablesTab">
+          <item>
+           <layout class="QHBoxLayout" name="layoutVerticesHeader">
+            <item>
+             <widget class="QLabel" name="labelVerticesTable">
+              <property name="text">
+               <string>Вершины</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerVerticesHeader">
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnAddVertexTable">
+              <property name="text">
+               <string>+ Добавить вершину</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnDeleteVertexTable">
+              <property name="text">
+               <string>− Удалить вершину</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="tableVertices">
+            <property name="editTriggers">
+             <set>QAbstractItemView::EditTrigger::DoubleClicked</set>
+            </property>
+            <column>
+             <property name="text">
+              <string>ID</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>X</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Y</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="layoutEdgesHeader">
+            <item>
+             <widget class="QLabel" name="labelEdgesTable">
+              <property name="text">
+               <string>Рёбра</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerEdgesHeader">
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnAddEdgeTable">
+              <property name="text">
+               <string>+ Добавить ребро</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnDeleteEdgeTable">
+              <property name="text">
+               <string>− Удалить ребро</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="tableEdges">
+            <property name="editTriggers">
+             <set>QAbstractItemView::EditTrigger::DoubleClicked</set>
+            </property>
+            <column>
+             <property name="text">
+              <string>Начало</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Конец</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Вес</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+         </layout>
+        </widget>
        </widget>
       </item>
       <item>
@@ -206,7 +347,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>806</width>
+     <width>810</width>
      <height>33</height>
     </rect>
    </property>

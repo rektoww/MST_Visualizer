@@ -267,3 +267,7 @@ class GraphScene(QGraphicsScene):
 
     def vertex_position(self, vertex_id: int) -> QPointF:
         return QPointF(self._vertex_items[vertex_id].pos())
+
+    def move_vertex(self, vertex_id: int, pos: QPointF) -> None:
+        self._vertex_items[vertex_id].setPos(pos)
+        self.update_connected_edges(vertex_id)
