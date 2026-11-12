@@ -1,18 +1,20 @@
 from pathlib import Path
 
 from PyQt6 import uic
-from PyQt6.QtWidgets import QMainWindow, QInputDialog, QMessageBox, QGraphicsView, QMenu, QTableWidgetItem
+from PyQt6.QtWidgets import QMainWindow, QInputDialog, QMessageBox, QGraphicsView, QMenu, QTableWidgetItem, QDialog
 from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, QPoint
 from PyQt6.QtGui import QShortcut, QKeySequence
 
 from app.core.graph import Graph
 from app.views.graph_scene import GraphScene
 from app.core.exceptions import GraphError
+from app.views.generate_graph_dialog import GenerateGraphDialog
+from app.core.graph_generator import generate_random_graph
 
 from app.core.algorithms.kruskal import kruskal
 from app.core.algorithms.prim import prim
 
-from math import isfinite
+from math import isfinite, cos, sin, pi
 
 
 class MainWindow(QMainWindow):
@@ -42,14 +44,7 @@ class MainWindow(QMainWindow):
 
         self.btnBuildMst.setEnabled(False)
         self.btnStepMode.setEnabled(True)
-        self.btnGenerateGraph.setEnabled(False)
-
-        self.comboAlgorithm.currentTextChanged.connect(self.on_algorithm_changed)
-        self.graph_scene.vertex_clicked.connect(self.on_vertex_clicked)
-        self.graph_scene.empty_space_clicked.connect(self.add_vertex_at)
-        self.btnClearCanvas.clicked.connect(self.clear_canvas)
-        self.graph_scene.vertex_moved.connect(lambda vertex_id: self.refresh_tables())
-        self.tableEdges.itemChanged.connect(self.on_edge_table_changed)
+        self.btnGenerateGraph.setEnabled(True)
 
         self.last_result = None
 
@@ -58,6 +53,33 @@ class MainWindow(QMainWindow):
         self.btnPreviousStep.setEnabled(False)
         self.btnNextStep.setEnabled(False)
 
+        self.btnBuildMst.setEnabled(True)
+        self.btnShowOriginalGraph.setEnabled(False)
+
+        self.playback_timer = QTimer(self)
+        self.playback_timer.setInterval(1000)
+
+        self.decision_timer = QTimer(self)
+        self.decision_timer.setSingleShot(True)
+
+        self.progressSteps.setVisible(False)
+
+        self.btnPlayPause.setEnabled(False)
+
+        self.comboPlaybackSpeed.setCurrentIndex(1)
+
+        self.btnGenerateGraph.clicked.connect(self.open_generate_graph_dialog)
+        self.comboAlgorithm.currentTextChanged.connect(self.on_algorithm_changed)
+        self.graph_scene.vertex_clicked.connect(self.on_vertex_clicked)
+        self.graph_scene.empty_space_clicked.connect(self.add_vertex_at)
+        self.btnClearCanvas.clicked.connect(self.clear_canvas)
+        self.graph_scene.vertex_moved.connect(lambda vertex_id: self.refresh_tables())
+        self.tableEdges.itemChanged.connect(self.on_edge_table_changed)
+        self.btnBuildMst.clicked.connect(self.build_mst)
+        self.btnShowOriginalGraph.clicked.connect(self.show_original_graph)
+        self.playback_timer.timeout.connect(self.advance_playback)
+        self.decision_timer.timeout.connect(self.finish_step_preview)
+        self.btnPlayPause.clicked.connect(self.toggle_playback)
         self.btnStepMode.clicked.connect(self.start_step_mode)
         self.btnPreviousStep.clicked.connect(self.previous_step)
         self.btnNextStep.clicked.connect(self.next_step)
@@ -68,27 +90,8 @@ class MainWindow(QMainWindow):
         self.btnDeleteVertexTable.clicked.connect(self.delete_vertex_from_table)
         self.btnDeleteEdgeTable.clicked.connect(self.delete_edge_from_table)
         self.tableVertices.itemChanged.connect(self.on_vertex_table_changed)
-
-        self.btnBuildMst.setEnabled(True)
-        self.btnShowOriginalGraph.setEnabled(False)
-
-        self.btnBuildMst.clicked.connect(self.build_mst)
-        self.btnShowOriginalGraph.clicked.connect(self.show_original_graph)
-
-        self.playback_timer = QTimer(self)
-        self.playback_timer.setInterval(1000)
-        self.playback_timer.timeout.connect(self.advance_playback)
-
-        self.decision_timer = QTimer(self)
-        self.decision_timer.setSingleShot(True)
-        self.decision_timer.timeout.connect(self.finish_step_preview)
-
-        self.progressSteps.setVisible(False)
-
-        self.btnPlayPause.setEnabled(False)
-        self.btnPlayPause.clicked.connect(self.toggle_playback)
-
-        self.comboPlaybackSpeed.setCurrentIndex(1)
+        self.actionSettings.triggered.connect(self.show_settings)
+        self.actionExit.triggered.connect(self.close)
         self.comboPlaybackSpeed.currentIndexChanged.connect(self.change_playback_speed)
 
         self._undo_stack = []
@@ -718,6 +721,67 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(f"Координаты вершины {vertex_id} изменены")
 
+    def show_settings(self) -> None:
+        QMessageBox.information(
+            self, "Настройки",
+            "Настройки приложения и выбор языка RU/EN добавим позже"
+        )
 
+    def open_generate_graph_dialog(self) -> None:
+        dialog = GenerateGraphDialog(self)
 
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        vertex_count = dialog.spinVertexCount.value()
+        edge_count = dialog.spinEdgeCount.value()
+        min_weight = dialog.spinMinWeight.value()
+        max_weight = dialog.spinMaxWeight.value()
+
+        if self.graph.vertices:
+            answer = QMessageBox.question(
+                self, "Генерация графа",
+                "Текущий граф будет заменён. Продолжить?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+
+        try:
+            new_graph = generate_random_graph(vertex_count, edge_count, min_weight, max_weight)
+        except GraphError as error:
+            QMessageBox.warning(self, "Ошибка генерации", str(error))
+            return
+
+        self.save_undo()
+        self.invalidate_mst()
+        self.pending_vertex = None
+
+        self.graph = new_graph
+        self.graph_scene.clear_graph()
+        self.graphView.resetTransform()
+
+        rect = self.graph_scene.sceneRect()
+        center = rect.center()
+        radius = min(rect.width(), rect.height()) * 0.33
+
+        for index, vertex_id in enumerate(sorted(self.graph.vertices)):
+            angle = 2 * pi * index / vertex_count - pi / 2
+
+            x = center.x() + radius * cos(angle)
+            y = center.y() + radius * sin(angle)
+
+            self.graph_scene.add_vertex(vertex_id, QPointF(x, y))
+
+        for edge in self.graph.edges:
+            self.graph_scene.add_edge(edge.start, edge.end, edge.weight)
+
+        self.refresh_tables()
+        self.tabGraphEditor.setCurrentWidget(self.tabCanvas)
+
+        self.statusBar().showMessage(
+            f"Сгенерирован граф: {vertex_count} вершин, {edge_count} рёбер"
+        )
 
