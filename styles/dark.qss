@@ -1,0 +1,149 @@
+
+/* Основные цвета и шрифты */
+QWidget {
+    color: #E5E7EB;
+    font-family: "Segoe UI";
+    font-size: 10pt;
+}
+
+QMainWindow, QDialog {
+    background-color: #1B1D23;
+}
+
+/* Кнопки */
+QPushButton {
+    background-color: #343844;
+    border: 1px solid #454B59;
+    border-radius: 8px;
+    padding: 7px 12px;
+}
+
+QPushButton:hover {
+    background-color: #424858;
+}
+
+QPushButton:pressed {
+    background-color: #292D37;
+}
+
+QPushButton:disabled {
+    color: #747B89;
+    background-color: #2A2E37;
+}
+
+/* Основная кнопка */
+QPushButton#btnBuildMst {
+    background-color: #3B82F6;
+    color: white;
+    border: none;
+}
+
+QPushButton#btnBuildMst:hover {
+    background-color: #2563EB;
+}
+
+/* Поля ввода */
+QComboBox, QSpinBox, QDoubleSpinBox {
+    background-color: #252830;
+    border: 1px solid #454B59;
+    border-radius: 6px;
+    padding: 5px 8px;
+}
+
+/* Вкладки */
+QTabWidget::pane {
+    border: 1px solid #3A3F4B;
+    background-color: #252830;
+}
+
+QTabBar::tab {
+    background-color: #30343E;
+    padding: 8px 16px;
+    margin-right: 3px;
+}
+
+QTabBar::tab:selected {
+    background-color: #252830;
+    color: #60A5FA;
+}
+
+/* Таблицы */
+QTableWidget {
+    background-color: #252830;
+    alternate-background-color: #2D313B;
+    gridline-color: #3A3F4B;
+    border: 1px solid #454B59;
+    selection-background-color: #264B80;
+    selection-color: white;
+}
+
+QHeaderView::section {
+    background-color: #30343E;
+    border: none;
+    border-right: 1px solid #454B59;
+    padding: 6px;
+}
+
+/* Верхнее меню */
+QMenuBar, QMenu {
+    background-color: #252830;
+}
+
+QMenuBar::item:selected, QMenu::item:selected {
+    background-color: #343844;
+}
+
+/* Строка состояния */
+QStatusBar {
+    background-color: #252830;
+}
+
+/* Полотно */
+QGraphicsView {
+    background-color: white;
+    border: 1px solid #454B59;
+    border-radius: 6px;
+}
+
+/* Выпадающие списки */
+QComboBox {
+    background-color: #252830;
+    color: #E5E7EB;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #252830;
+    color: #E5E7EB;
+    border: 1px solid #454B59;
+    selection-background-color: #3B82F6;
+    selection-color: #FFFFFF;
+    outline: none;
+}
+
+QComboBox QAbstractItemView::item {
+    padding: 5px 8px;
+}
+
+QComboBox QAbstractItemView::item:disabled {
+    color: #9CA3AF;
+}
+
+/* Заголовки таблиц и пустые области */
+QHeaderView {
+    background-color: #30343E;
+    color: #E5E7EB;
+}
+
+QHeaderView::section {
+    background-color: #30343E;
+    color: #E5E7EB;
+    border: none;
+    border-right: 1px solid #454B59;
+    border-bottom: 1px solid #454B59;
+    padding: 6px;
+}
+
+QTableCornerButton::section {
+    background-color: #30343E;
+    border: 1px solid #454B59;
+}

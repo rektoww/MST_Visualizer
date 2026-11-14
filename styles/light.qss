@@ -1,0 +1,106 @@
+
+/* Основные цвета и шрифты */
+QWidget {
+    color: #1E293B;
+    font-family: "Segoe UI";
+    font-size: 10pt;
+}
+
+QMainWindow, QDialog {
+    background-color: #F3F5F8;
+}
+
+/* Кнопки */
+QPushButton {
+    background-color: #E2E8F0;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    padding: 7px 12px;
+}
+
+QPushButton:hover {
+    background-color: #D5DFEB;
+}
+
+QPushButton:pressed {
+    background-color: #C4D0DE;
+}
+
+QPushButton:disabled {
+    color: #94A3B8;
+    background-color: #E8ECF2;
+}
+
+/* Основная кнопка */
+QPushButton#btnBuildMst {
+    background-color: #2563EB;
+    color: white;
+    border: none;
+}
+
+QPushButton#btnBuildMst:hover {
+    background-color: #1D4ED8;
+}
+
+/* Поля ввода */
+QComboBox, QSpinBox, QDoubleSpinBox {
+    background-color: white;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 5px 8px;
+}
+
+/* Вкладки */
+QTabWidget::pane {
+    border: 1px solid #D5DCE6;
+    background-color: white;
+}
+
+QTabBar::tab {
+    background-color: #E2E8F0;
+    padding: 8px 16px;
+    margin-right: 3px;
+}
+
+QTabBar::tab:selected {
+    background-color: white;
+    color: #2563EB;
+}
+
+/* Таблицы */
+QTableWidget {
+    background-color: white;
+    alternate-background-color: #F8FAFC;
+    gridline-color: #E2E8F0;
+    border: 1px solid #CBD5E1;
+    selection-background-color: #DBEAFE;
+    selection-color: #1E293B;
+}
+
+QHeaderView::section {
+    background-color: #E2E8F0;
+    border: none;
+    border-right: 1px solid #CBD5E1;
+    padding: 6px;
+}
+
+/* Верхнее меню */
+QMenuBar, QMenu {
+    background-color: #F3F5F8;
+}
+
+QMenuBar::item:selected, QMenu::item:selected {
+    background-color: #DBEAFE;
+}
+
+/* Строка состояния */
+QStatusBar {
+    background-color: #E2E8F0;
+}
+
+/* Полотно */
+QGraphicsView {
+    background-color: white;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+}
