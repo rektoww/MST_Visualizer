@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from PyQt6 import uic
-from PyQt6.QtWidgets import QMainWindow, QInputDialog, QMessageBox, QGraphicsView, QMenu, QTableWidgetItem, QDialog
+from PyQt6.QtWidgets import QMainWindow, QInputDialog, QMessageBox, QGraphicsView, QMenu, QTableWidgetItem, QDialog, QFileDialog
 from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, QPoint
 from PyQt6.QtGui import QShortcut, QKeySequence
 
@@ -10,11 +10,12 @@ from app.views.graph_scene import GraphScene
 from app.core.exceptions import GraphError
 from app.views.generate_graph_dialog import GenerateGraphDialog
 from app.core.graph_generator import generate_random_graph
+from app.core.graph_storage import save_graph, load_graph
 
 from app.core.algorithms.kruskal import kruskal
 from app.core.algorithms.prim import prim
 
-from math import isfinite, cos, sin, pi
+from math import isfinite, cos, sin, pi, hypot
 
 
 class MainWindow(QMainWindow):
@@ -24,6 +25,12 @@ class MainWindow(QMainWindow):
         ui_path = (Path(__file__).resolve().parents[2] / "ui" / "main_window.ui")
 
         uic.loadUi(str(ui_path), self)
+
+        self.current_file_path: Path | None = None
+
+        self.graphs_dir = (
+                Path(__file__).resolve().parents[2] / "data" / "graphs"
+        )
 
         self.graph = Graph()
         self.graph_scene = GraphScene(self)
@@ -93,6 +100,9 @@ class MainWindow(QMainWindow):
         self.actionSettings.triggered.connect(self.show_settings)
         self.actionExit.triggered.connect(self.close)
         self.comboPlaybackSpeed.currentIndexChanged.connect(self.change_playback_speed)
+        self.actionSave.triggered.connect(self.save_current_graph)
+        self.actionSaveAs.triggered.connect(self.save_current_graph_as)
+        self.actionLoad.triggered.connect(self.load_graph_from_file)
 
         self._undo_stack = []
 
@@ -198,8 +208,9 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return
 
-        self.save_undo()
+        self.save_undo(restore_file_path=True)
 
+        self.current_file_path = None
         self.graph = Graph()
         self.graph_scene.clear_graph()
         self.pending_vertex = None
@@ -398,14 +409,14 @@ class MainWindow(QMainWindow):
         if self.step_index is not None and self.last_result is not None:
             self.update_step_view()
 
-    def save_undo(self) -> None:
+    def save_undo(self, restore_file_path: bool = False) -> None:
         positions = {}
 
         for vertex_id in self.graph.vertices:
             pos = self.graph_scene.vertex_position(vertex_id)
             positions[vertex_id] = (pos.x(), pos.y())
 
-        state = (tuple(sorted(self.graph.vertices)), self.graph.edges, positions)
+        state = (tuple(sorted(self.graph.vertices)), self.graph.edges, positions, self.current_file_path, restore_file_path)
         self._undo_stack.append(state)
 
         if len(self._undo_stack) > 50:
@@ -416,7 +427,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Нет действий для отмены")
             return
 
-        vertices, edges, positions = self._undo_stack.pop()
+        vertices, edges, positions, file_path, restore_file_path = self._undo_stack.pop()
         self.pending_vertex = None
 
         self.invalidate_mst()
@@ -435,6 +446,9 @@ class MainWindow(QMainWindow):
 
         for edge in edges:
             self.graph_scene.add_edge(edge.start, edge.end, edge.weight)
+
+        if restore_file_path:
+            self.current_file_path = file_path
 
         self.refresh_tables()
         self.statusBar().showMessage("Последнее действие отменено")
@@ -755,9 +769,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка генерации", str(error))
             return
 
-        self.save_undo()
+        self.save_undo(restore_file_path=True)
         self.invalidate_mst()
         self.pending_vertex = None
+        self.current_file_path = None
 
         self.graph = new_graph
         self.graph_scene.clear_graph()
@@ -784,4 +799,134 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Сгенерирован граф: {vertex_count} вершин, {edge_count} рёбер"
         )
+
+    def write_graph_to_file(self, path: Path) -> None:
+        positions = {}
+
+        for vertex_id in self.graph.vertices:
+            pos = self.graph_scene.vertex_position(vertex_id)
+            positions[vertex_id] = (pos.x(), pos.y())
+
+        try:
+            save_graph(self.graph, positions, path)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(
+                self, "Ошибка сохранения", str(error)
+            )
+            return
+
+        self.current_file_path = path
+        self.statusBar().showMessage(f"Граф сохранён: {path.name}")
+
+    def save_current_graph(self) -> None:
+        if self.current_file_path is not None:
+            self.write_graph_to_file(self.current_file_path)
+            return
+
+        index = 1
+
+        while True:
+            path = self.graphs_dir / f"graph_{index:03d}.json"
+
+            if not path.exists():
+                break
+
+            index += 1
+
+        self.write_graph_to_file(path)
+
+    def save_current_graph_as(self) -> None:
+        suggested_path = (
+                self.current_file_path
+                or self.graphs_dir / "graph.json"
+        )
+
+        filename, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить граф как...",
+            str(suggested_path),
+            "Файлы графов (*.json)"
+        )
+
+        if not filename:
+            return
+
+        path = Path(filename)
+
+        if path.suffix.lower() != ".json":
+            path = Path(str(path) + ".json")
+
+        self.write_graph_to_file(path)
+
+    def load_graph_from_file(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(self,"Загрузить граф", str(self.graphs_dir),"Файлы графов (*.json)")
+
+        if not filename:
+            return
+
+        path = Path(filename)
+
+        try:
+            new_graph, positions = load_graph(path)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "Ошибка загрузки", str(error))
+            return
+
+        bounds = self.graph_scene.sceneRect().adjusted(18, 18, -18, -18)
+
+        for vertex_id, (x, y) in positions.items():
+            if not bounds.contains(QPointF(x, y)):
+                QMessageBox.warning(
+                    self, "Ошибка загрузки",
+                    f"Вершина {vertex_id} находится за границами полотна"
+                )
+                return
+
+        vertices = list(positions.items())
+
+        for index, (first_id, (x1, y1)) in enumerate(vertices):
+            for second_id, (x2, y2) in vertices[index + 1:]:
+                if hypot(x1 - x2, y1 - y2) < 50:
+                    QMessageBox.warning(
+                        self, "Ошибка загрузки",
+                        f"Вершины {first_id} и {second_id} расположены слишком близко"
+                    )
+                    return
+
+        if self.graph.vertices:
+            answer = QMessageBox.question(
+                self,
+                "Загрузка графа",
+                "Текущий граф будет заменён. Продолжить?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+
+        self.save_undo(restore_file_path=True)
+        self.invalidate_mst()
+        self.pending_vertex = None
+
+        self.graph = new_graph
+        self.graph_scene.clear_graph()
+        self.graphView.resetTransform()
+
+        for vertex_id, (x, y) in sorted(positions.items()):
+            self.graph_scene.add_vertex(vertex_id, QPointF(x, y))
+
+        for edge in self.graph.edges:
+            self.graph_scene.add_edge(
+                edge.start, edge.end, edge.weight
+            )
+
+        self.current_file_path = path
+
+        self.refresh_tables()
+        self.tabGraphEditor.setCurrentWidget(self.tabCanvas)
+
+        self.statusBar().showMessage(f"Загружен граф: {path.name}")
+
+
 
