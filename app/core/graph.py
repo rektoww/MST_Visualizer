@@ -20,28 +20,28 @@ class Graph:
 
     def add_vertex(self, vertex_id: int) -> None:
         if vertex_id in self._vertices:
-            raise VertexAlreadyExistsError(f"Вершина {vertex_id} уже существует")
+            raise VertexAlreadyExistsError(f"Вершина {vertex_id} уже существует", code="graph_vertex_exists", vertex_id=vertex_id)
 
         self._vertices.add(vertex_id)
 
     def add_edge(self, start: int, end: int, weight: float) -> None:
         if start not in self._vertices:
-            raise VertexNotFoundError(f"Вершина {start} не найдена")
+            raise VertexNotFoundError(f"Вершина {start} не найдена", code="graph_vertex_not_found", vertex_id=start)
 
         if end not in self._vertices:
-            raise VertexNotFoundError(f"Вершина {end} не найдена")
+            raise VertexNotFoundError(f"Вершина {end} не найдена", code="graph_vertex_not_found", vertex_id=end)
 
         if start == end:
-            raise GraphError("Петли в графе запрещены")
+            raise GraphError("Петли в графе запрещены", code="graph_self_loop")
 
         if not isfinite(weight):
-            raise GraphError("Вес должен быть конечным числом")
+            raise GraphError("Вес должен быть конечным числом", code="graph_invalid_weight")
 
         first, second = sorted((start, end))
         key = (first, second)
 
         if key in self._edges:
-            raise GraphError("Ребро уже существует")
+            raise GraphError("Ребро уже существует", code="graph_edge_exists")
 
         self._edges[key] = Edge(first, second, float(weight))
 
@@ -51,7 +51,7 @@ class Graph:
 
     def remove_vertex(self, vertex_id: int) -> None:
         if vertex_id not in self._vertices:
-            raise VertexNotFoundError(f"Вершина {vertex_id} не найдена")
+            raise VertexNotFoundError(f"Вершина {vertex_id} не найдена", code="graph_vertex_not_found", vertex_id=vertex_id)
 
         self._vertices.remove(vertex_id)
 
@@ -63,7 +63,7 @@ class Graph:
         key = tuple(sorted((start, end)))
 
         if key not in self._edges:
-            raise GraphError("Ребро не найдено")
+            raise GraphError("Ребро не найдено", code="graph_edge_not_found")
 
         del self._edges[key]
 
@@ -71,10 +71,10 @@ class Graph:
         key = tuple(sorted((start, end)))
 
         if key not in self._edges:
-            raise GraphError("Ребро не найдено")
+            raise GraphError("Ребро не найдено", code="graph_edge_not_found")
 
         if not isfinite(weight):
-            raise GraphError("Вес должен быть конечным числом")
+            raise GraphError("Вес должен быть конечным числом", code="graph_invalid_weight")
 
         self._edges[key] = Edge(key[0], key[1], float(weight))
 

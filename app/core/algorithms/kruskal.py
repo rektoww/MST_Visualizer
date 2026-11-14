@@ -5,7 +5,7 @@ from app.core.algorithms.result import AlgorithmStep, MSTResult
 
 def kruskal(graph: Graph) -> MSTResult:
     if not graph.vertices:
-        raise GraphError("Граф не содержит вершин")
+        raise GraphError("Граф не содержит вершин", code="graph_empty")
 
     dsu = DisjointSet(graph.vertices)
 
@@ -27,6 +27,6 @@ def kruskal(graph: Graph) -> MSTResult:
                 break
 
     if len(selected_edges) != len(graph.vertices) - 1:
-        raise GraphError("Невозможно построить остов: граф несвязный")
+        raise GraphError("Невозможно построить остов: граф несвязный", code="graph_disconnected")
 
     return MSTResult(tuple(selected_edges), total_weight, tuple(steps))

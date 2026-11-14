@@ -147,3 +147,19 @@ QTableCornerButton::section {
     background-color: #30343E;
     border: 1px solid #454B59;
 }
+
+
+/* Полоса прогресса алгоритма */
+QProgressBar {
+    background-color: #252830;
+    color: #E5E7EB;
+    border: 1px solid #454B59;
+    border-radius: 6px;
+    text-align: center;
+    min-height: 18px;
+}
+
+QProgressBar::chunk {
+    background-color: #3B82F6;
+    border-radius: 5px;
+}

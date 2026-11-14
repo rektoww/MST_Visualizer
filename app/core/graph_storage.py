@@ -1,25 +1,31 @@
-
 import json
 from math import isfinite
 from pathlib import Path
 
 from app.core.graph import Graph
 from app.core.exceptions import GraphError
+from app.core.edge import Edge
 
 
 def is_number(value) -> bool:
     return type(value) in (int, float) and isfinite(value)
 
+def edge_to_dict(edge: Edge) -> dict:
+    return {"start": edge.start, "end": edge.end, "weight": edge.weight}
 
 def save_graph(graph: Graph, positions: dict[int, tuple[float, float]], path: str | Path) -> None:
+    data = graph_to_dict(graph, positions)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=4, allow_nan=False)
+
+def graph_to_dict(graph: Graph, positions: dict[int, tuple[float, float]]) -> dict:
     if set(positions) != set(graph.vertices):
         raise ValueError("Координаты вершин не соответствуют графу")
 
-    data = {
-        "version": 1,
-        "vertices": [],
-        "edges": []
-    }
+    data = {"version": 1, "vertices": [], "edges": []}
 
     for vertex_id in sorted(graph.vertices):
         x, y = positions[vertex_id]
@@ -27,25 +33,12 @@ def save_graph(graph: Graph, positions: dict[int, tuple[float, float]], path: st
         if not is_number(x) or not is_number(y):
             raise ValueError("Некорректные координаты вершины")
 
-        data["vertices"].append({
-            "id": vertex_id,
-            "x": x,
-            "y": y
-        })
+        data["vertices"].append({"id": vertex_id, "x": x, "y": y})
 
     for edge in graph.edges:
-        data["edges"].append({
-            "start": edge.start,
-            "end": edge.end,
-            "weight": edge.weight
-        })
+        data["edges"].append(edge_to_dict(edge))
 
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=4, allow_nan=False)
-
+    return data
 
 def load_graph(
     path: str | Path

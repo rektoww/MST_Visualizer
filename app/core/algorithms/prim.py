@@ -6,7 +6,7 @@ from app.core.graph import Graph
 
 def prim(graph: Graph) -> MSTResult:
     if not graph.vertices:
-        raise GraphError("Граф не содержит вершин")
+        raise GraphError("Граф не содержит вершин", code="graph_empty")
 
     adjacency = {vertex: [] for vertex in graph.vertices}
 
@@ -46,6 +46,6 @@ def prim(graph: Graph) -> MSTResult:
                 heappush(candidates, (next_edge.weight, next_edge.start, next_edge.end, next_edge))
 
     if len(visited) != len(graph.vertices):
-        raise GraphError("Невозможно построить остов: граф несвязный")
+        raise GraphError("Невозможно построить остов: граф несвязный", code="graph_disconnected")
 
     return MSTResult(tuple(selected_edges), total_weight, tuple(steps))

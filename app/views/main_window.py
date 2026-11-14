@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from PyQt6 import uic
-from PyQt6.QtWidgets import QMainWindow, QInputDialog, QMessageBox, QGraphicsView, QMenu, QTableWidgetItem, QDialog, QFileDialog
-from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, QPoint
+from PyQt6.QtWidgets import QMainWindow, QInputDialog, QMessageBox, QGraphicsView, QMenu, QTableWidgetItem, QDialog, QFileDialog, QApplication
+from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, QPoint, QSettings
 from PyQt6.QtGui import QShortcut, QKeySequence
 
 from app.core.graph import Graph
@@ -10,114 +10,174 @@ from app.views.graph_scene import GraphScene
 from app.core.exceptions import GraphError
 from app.views.generate_graph_dialog import GenerateGraphDialog
 from app.core.graph_generator import generate_random_graph
-from app.core.graph_storage import save_graph, load_graph
+from app.core.graph_storage import save_graph, load_graph, graph_to_dict, edge_to_dict
+from app.views.settings_dialog import SettingsDialog
+from app.views.calculations_loader import CalculationsLoader
+from app.i18n import translate
+from app.core.algorithms.result import MSTResult
+from app.event_logger import queue_calculation
 
 from app.core.algorithms.kruskal import kruskal
 from app.core.algorithms.prim import prim
 
 from math import isfinite, cos, sin, pi, hypot
+from time import perf_counter
 
 
 class MainWindow(QMainWindow):
+
     def __init__(self):
         super().__init__()
 
-        ui_path = (Path(__file__).resolve().parents[2] / "ui" / "main_window.ui")
+        # Загрузка интерфейса
+        project_dir = Path(__file__).resolve().parents[2]
+        uic.loadUi(str(project_dir / "ui" / "main_window.ui"), self)
 
-        uic.loadUi(str(ui_path), self)
+        # Настройки приложения
+        self.settings = QSettings("MSTVisualizer", "MSTVisualizer")
 
+        self.theme = self.settings.value("theme", "light")
+        if self.theme not in ("light", "dark"):
+            self.theme = "light"
+
+        self.language = self.settings.value("language", "ru")
+        if self.language not in ("ru", "en"):
+            self.language = "ru"
+
+        self.apply_theme(self.theme)
+
+        # Пути и состояние приложения
+        self.graphs_dir = project_dir / "data" / "graphs"
         self.current_file_path: Path | None = None
+        self.history_loader: CalculationsLoader | None = None
 
-        self.graphs_dir = (
-                Path(__file__).resolve().parents[2] / "data" / "graphs"
-        )
+        self.pending_vertex: int | None = None
+        self.last_result = None
+        self.execution_time_ms: float | None = None
+        self.step_index: int | None = None
+        self._undo_stack = []
 
+        # Граф и графическая сцена
         self.graph = Graph()
         self.graph_scene = GraphScene(self)
         self.graph_scene.setSceneRect(0, 0, 1200, 900)
 
-        self.graph_scene.vertex_move_started.connect(self.begin_vertex_move)
-        self.graph_scene.vertex_moved.connect(
-            lambda vertex_id: self.statusBar().showMessage(f"Вершина {vertex_id} перемещена")
-        )
-
         self.graphView.setScene(self.graph_scene)
         self.graphView.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-
-        self.graphView.viewport().installEventFilter(self)
         self.graphView.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.graphView.viewport().installEventFilter(self)
 
-        self.pending_vertex: int | None = None
-
-        self.btnBuildMst.setEnabled(False)
+        # Начальное состояние элементов интерфейса
+        self.btnBuildMst.setEnabled(True)
         self.btnStepMode.setEnabled(True)
         self.btnGenerateGraph.setEnabled(True)
-
-        self.last_result = None
-
-        self.step_index: int | None = None
+        self.btnShowOriginalGraph.setEnabled(False)
 
         self.btnPreviousStep.setEnabled(False)
         self.btnNextStep.setEnabled(False)
+        self.btnPlayPause.setEnabled(False)
 
-        self.btnBuildMst.setEnabled(True)
-        self.btnShowOriginalGraph.setEnabled(False)
+        self.progressSteps.setVisible(False)
+        self.comboPlaybackSpeed.setCurrentIndex(1)
 
+        # Таймеры пошагового воспроизведения
         self.playback_timer = QTimer(self)
         self.playback_timer.setInterval(1000)
 
         self.decision_timer = QTimer(self)
         self.decision_timer.setSingleShot(True)
 
-        self.progressSteps.setVisible(False)
-
-        self.btnPlayPause.setEnabled(False)
-
-        self.comboPlaybackSpeed.setCurrentIndex(1)
-
-        self.btnGenerateGraph.clicked.connect(self.open_generate_graph_dialog)
-        self.comboAlgorithm.currentTextChanged.connect(self.on_algorithm_changed)
+        # Сигналы графической сцены
+        self.graph_scene.vertex_move_started.connect(self.begin_vertex_move)
+        self.graph_scene.vertex_moved.connect(
+            lambda vertex_id: self.statusBar().showMessage(self.localized_text("vertex_moved", vertex_id=vertex_id))
+        )
+        self.graph_scene.vertex_moved.connect(lambda vertex_id: self.refresh_tables())
         self.graph_scene.vertex_clicked.connect(self.on_vertex_clicked)
         self.graph_scene.empty_space_clicked.connect(self.add_vertex_at)
+        self.graph_scene.vertex_context_requested.connect(self.show_vertex_menu)
+        self.graph_scene.edge_context_requested.connect(self.show_edge_menu)
+
+        # Кнопки управления графом
+        self.btnGenerateGraph.clicked.connect(self.open_generate_graph_dialog)
         self.btnClearCanvas.clicked.connect(self.clear_canvas)
-        self.graph_scene.vertex_moved.connect(lambda vertex_id: self.refresh_tables())
-        self.tableEdges.itemChanged.connect(self.on_edge_table_changed)
         self.btnBuildMst.clicked.connect(self.build_mst)
         self.btnShowOriginalGraph.clicked.connect(self.show_original_graph)
-        self.playback_timer.timeout.connect(self.advance_playback)
-        self.decision_timer.timeout.connect(self.finish_step_preview)
-        self.btnPlayPause.clicked.connect(self.toggle_playback)
+        self.comboAlgorithm.currentTextChanged.connect(self.on_algorithm_changed)
+
+        # Управление пошаговым воспроизведением
         self.btnStepMode.clicked.connect(self.start_step_mode)
         self.btnPreviousStep.clicked.connect(self.previous_step)
         self.btnNextStep.clicked.connect(self.next_step)
-        self.graph_scene.vertex_context_requested.connect(self.show_vertex_menu)
-        self.graph_scene.edge_context_requested.connect(self.show_edge_menu)
-        self.btnAddVertexTable.clicked.connect(self.add_vertex_from_table)
-        self.btnAddEdgeTable.clicked.connect(self.add_edge_from_table)
-        self.btnDeleteVertexTable.clicked.connect(self.delete_vertex_from_table)
-        self.btnDeleteEdgeTable.clicked.connect(self.delete_edge_from_table)
-        self.tableVertices.itemChanged.connect(self.on_vertex_table_changed)
-        self.actionSettings.triggered.connect(self.show_settings)
-        self.actionExit.triggered.connect(self.close)
+        self.btnPlayPause.clicked.connect(self.toggle_playback)
         self.comboPlaybackSpeed.currentIndexChanged.connect(self.change_playback_speed)
+
+        self.playback_timer.timeout.connect(self.advance_playback)
+        self.decision_timer.timeout.connect(self.finish_step_preview)
+
+        # Редактирование графа через таблицы
+        self.btnAddVertexTable.clicked.connect(self.add_vertex_from_table)
+        self.btnDeleteVertexTable.clicked.connect(self.delete_vertex_from_table)
+        self.btnAddEdgeTable.clicked.connect(self.add_edge_from_table)
+        self.btnDeleteEdgeTable.clicked.connect(self.delete_edge_from_table)
+
+        self.tableVertices.itemChanged.connect(self.on_vertex_table_changed)
+        self.tableEdges.itemChanged.connect(self.on_edge_table_changed)
+
+        # История расчётов
+        self.btnRefreshHistory.clicked.connect(self.load_history)
+
+        # Главное меню
         self.actionSave.triggered.connect(self.save_current_graph)
         self.actionSaveAs.triggered.connect(self.save_current_graph_as)
         self.actionLoad.triggered.connect(self.load_graph_from_file)
+        self.actionSettings.triggered.connect(self.show_settings)
+        self.actionExit.triggered.connect(self.close)
 
-        self._undo_stack = []
-
+        # Отмена последнего действия
         self.undo_shortcut = QShortcut(QKeySequence.StandardKey.Undo, self)
         self.undo_shortcut.activated.connect(self.undo)
 
-        self.statusBar().showMessage("Готово к работе")
+        # Применение локализации
+        self.update_language()
+        self.statusBar().showMessage(translate("ready", self.language))
+
+    def localized_text(self, key: str, **values) -> str:
+        return translate(key, self.language).format(**values)
+
+    def localized_error(self, error: GraphError) -> str:
+        if error.code is None:
+            return str(error)
+
+        return self.localized_text(
+            error.code,
+            **error.params
+        )
+
+    def confirm_action(self, title_key: str, message_key: str) -> bool:
+        dialog = QMessageBox(self)
+
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setWindowTitle(self.localized_text(title_key))
+        dialog.setText(self.localized_text(message_key))
+
+        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+
+        dialog.button(QMessageBox.StandardButton.Yes).setText(self.localized_text("yes"))
+
+        dialog.button(QMessageBox.StandardButton.No).setText(self.localized_text("no"))
+
+        return dialog.exec() == QMessageBox.StandardButton.Yes
 
     def on_algorithm_changed(self, algorithm: str) -> None:
         self.invalidate_mst()
-        self.statusBar().showMessage(f"Выбран: {algorithm}")
+        self.statusBar().showMessage(self.localized_text("algorithm_selected", algorithm=algorithm))
 
     def add_vertex_at(self, pos: QPointF) -> None:
         if not self.graph_scene.can_place_vertex(pos):
-            self.statusBar().showMessage("Слишком близко к другой вершине")
+            self.statusBar().showMessage(self.localized_text("vertex_too_close"))
             return
 
         self.save_undo()
@@ -128,13 +188,13 @@ class MainWindow(QMainWindow):
         self.graph.add_vertex(vertex_id)
         self.graph_scene.add_vertex(vertex_id, pos)
         self.refresh_tables()
-        self.statusBar().showMessage(f"Добавлена вершина {vertex_id}")
+        self.statusBar().showMessage(self.localized_text("vertex_added", vertex_id=vertex_id))
 
     def on_vertex_clicked(self, vertex_id: int) -> None:
         if self.pending_vertex is None:
             self.pending_vertex = vertex_id
             self.graph_scene.select_vertex(vertex_id)
-            self.statusBar().showMessage(f"Выбрана вершина {vertex_id}. Выберите вторую")
+            self.statusBar().showMessage(self.localized_text("first_vertex_selected", vertex_id=vertex_id))
             return
 
         first = self.pending_vertex
@@ -142,23 +202,23 @@ class MainWindow(QMainWindow):
         self.graph_scene.select_vertex(None)
 
         if first == vertex_id:
-            self.statusBar().showMessage("Выбор вершины отменён")
+            self.statusBar().showMessage(self.localized_text("vertex_selection_cancelled"))
             return
 
         if self.graph.has_edge(first, vertex_id):
             QMessageBox.warning(
-                self, "Ребро уже существует",
-                f"Вершины {first} и {vertex_id} уже соединены"
+                self, self.localized_text("edge_exists_title"),
+                self.localized_text("vertices_already_connected", first=first, second=vertex_id)
             )
             return
 
         weight, ok = QInputDialog.getDouble(
-            self, "Вес ребра", f"Вес ребра {first}–{vertex_id}:",
+            self, self.localized_text("edge_weight_title"), self.localized_text("edge_weight_between", first=first, second=vertex_id),
             1.0, -1000000.0, 1000000.0, 2
         )
 
         if not ok:
-            self.statusBar().showMessage("Добавление ребра отменено")
+            self.statusBar().showMessage(self.localized_text("edge_add_cancelled"))
             return
 
         self.save_undo()
@@ -166,13 +226,13 @@ class MainWindow(QMainWindow):
         try:
             self.graph.add_edge(first, vertex_id, weight)
         except GraphError as error:
-            QMessageBox.warning(self, "Ошибка добавления ребра", str(error))
+            QMessageBox.warning(self, self.localized_text("edge_add_error_title"), self.localized_error(error))
             return
 
         self.invalidate_mst()
         self.graph_scene.add_edge(first, vertex_id, weight)
         self.refresh_tables()
-        self.statusBar().showMessage(f"Добавлено ребро {first}–{vertex_id}, вес {weight:g}")
+        self.statusBar().showMessage(self.localized_text("edge_added", start=first, end=vertex_id, weight=f"{weight:g}"))
 
     def eventFilter(self, watched, event) -> bool:
         if watched is self.graphView.viewport() and event.type() == QEvent.Type.Wheel:
@@ -195,17 +255,10 @@ class MainWindow(QMainWindow):
 
     def clear_canvas(self) -> None:
         if not self.graph.vertices:
-            self.statusBar().showMessage("Полотно уже пустое")
+            self.statusBar().showMessage(self.localized_text("canvas_already_empty"))
             return
 
-        answer = QMessageBox.question(
-            self, "Очистка полотна",
-            "Удалить все вершины и рёбра?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-
-        if answer != QMessageBox.StandardButton.Yes:
+        if not self.confirm_action("clear_canvas_title", "clear_canvas_question"):
             return
 
         self.save_undo(restore_file_path=True)
@@ -219,7 +272,7 @@ class MainWindow(QMainWindow):
         self.invalidate_mst()
 
         self.refresh_tables()
-        self.statusBar().showMessage("Полотно очищено")
+        self.statusBar().showMessage(self.localized_text("canvas_cleared"))
 
     def build_mst(self) -> None:
         self.pause_playback()
@@ -227,28 +280,32 @@ class MainWindow(QMainWindow):
         algorithm_index = self.comboAlgorithm.currentIndex()
 
         if algorithm_index not in (0, 1):
-            QMessageBox.warning(self, "Алгоритм не выбран", "Сначала выберите алгоритм")
+            QMessageBox.warning(self, self.localized_text("algorithm_not_selected_title"), self.localized_text("select_algorithm_first"))
             return
 
         try:
-            if algorithm_index == 0:
-                result = kruskal(self.graph)
-            else:
-                result = prim(self.graph)
+            started = perf_counter()
+
+            result = kruskal(self.graph) if algorithm_index == 0 else prim(self.graph)
+
+            self.execution_time_ms = (perf_counter() - started) * 1000
+
         except GraphError as error:
-            QMessageBox.warning(self, "Построение остова", str(error))
+            QMessageBox.warning(self, self.localized_text("build_error_title"), self.localized_error(error))
             return
 
         self.last_result = result
         self.step_index = None
+        self.update_result_labels()
         self.btnPreviousStep.setEnabled(False)
         self.btnNextStep.setEnabled(False)
         self.btnPlayPause.setEnabled(False)
         self.graph_scene.show_mst(result.edges)
         self.btnShowOriginalGraph.setEnabled(True)
+        self.queue_current_calculation(result, algorithm_index, "build")
 
         self.statusBar().showMessage(
-            f"Остов построен. Рёбер: {len(result.edges)}, общий вес: {result.total_weight:g}"
+            self.localized_text("mst_built", count=len(result.edges), weight=f"{result.total_weight:g}")
         )
 
         self.progressSteps.setVisible(False)
@@ -263,8 +320,11 @@ class MainWindow(QMainWindow):
         self.btnNextStep.setEnabled(False)
         self.btnPlayPause.setEnabled(False)
         self.btnShowOriginalGraph.setEnabled(False)
+        self.last_result = None
+        self.execution_time_ms = None
+        self.update_result_labels()
 
-        self.statusBar().showMessage("Показан исходный граф")
+        self.statusBar().showMessage(self.localized_text("original_graph_shown"))
 
         self.progressSteps.setVisible(False)
 
@@ -273,6 +333,9 @@ class MainWindow(QMainWindow):
         self.decision_timer.stop()
         self.last_result = None
         self.step_index = None
+        self.execution_time_ms = None
+
+        self.update_result_labels()
 
         self.graph_scene.show_original_graph()
 
@@ -289,13 +352,15 @@ class MainWindow(QMainWindow):
         algorithm_index = self.comboAlgorithm.currentIndex()
 
         if algorithm_index not in (0, 1):
-            QMessageBox.warning(self, "Алгоритм не выбран", "Сначала выберите алгоритм")
+            QMessageBox.warning(self, self.localized_text("algorithm_not_selected_title"), self.localized_text("select_algorithm_first"))
             return
 
         try:
+            started = perf_counter()
             result = kruskal(self.graph) if algorithm_index == 0 else prim(self.graph)
+            self.execution_time_ms = (perf_counter() - started) * 1000
         except GraphError as error:
-            QMessageBox.warning(self, "Пошаговый режим", str(error))
+            QMessageBox.warning(self, self.localized_text("step_mode"), self.localized_error(error))
             return
 
         self.pending_vertex = None
@@ -304,6 +369,7 @@ class MainWindow(QMainWindow):
         self.last_result = result
         self.step_index = 0
         self.btnShowOriginalGraph.setEnabled(True)
+        self.queue_current_calculation(result, algorithm_index, "step")
 
         self.update_step_view()
 
@@ -316,7 +382,8 @@ class MainWindow(QMainWindow):
         self.progressSteps.setVisible(True)
         self.progressSteps.setRange(0, max(1, len(steps)))
         self.progressSteps.setValue(self.step_index)
-        self.progressSteps.setFormat("Шаг %v из %m")
+        self.update_result_labels(preview)
+        self.progressSteps.setFormat(translate("step_progress", self.language))
 
         self.btnPreviousStep.setEnabled(self.step_index > 0)
         self.btnNextStep.setEnabled(self.step_index < len(steps))
@@ -324,21 +391,33 @@ class MainWindow(QMainWindow):
         self.btnPlayPause.setEnabled(bool(steps))
 
         if not steps:
-            message = "Остов готов: одна вершина, общий вес 0"
+            message = self.localized_text("single_vertex_mst")
         elif self.step_index == 0:
-            message = f"Пошаговый режим: всего {len(steps)} шагов"
+            message = self.localized_text("step_mode_started", count=len(steps))
         else:
             step = steps[self.step_index - 1]
-            decision = "рассматривается" if preview else ("принято" if step.accepted else "отклонено (цикл)")
+            decision_key = (
+                "step_preview" if preview
+                else "step_accepted" if step.accepted
+                else "step_rejected"
+            )
+            decision = self.localized_text(decision_key)
 
-            message = (
-                f"Шаг {self.step_index}/{len(steps)}: "
-                f"ребро {step.edge.start}–{step.edge.end}, "
-                f"вес {step.edge.weight:g} — {decision}"
+            message = self.localized_text(
+                "step_status",
+                current=self.step_index,
+                total=len(steps),
+                start=step.edge.start,
+                end=step.edge.end,
+                weight=f"{step.edge.weight:g}",
+                decision=decision
             )
 
-            if self.step_index == len(steps):
-                message += f". Остов построен, общий вес {self.last_result.total_weight:g}"
+            if self.step_index == len(steps) and not preview:
+                message += self.localized_text(
+                    "step_mst_finished",
+                    weight=f"{self.last_result.total_weight:g}"
+                )
 
         self.statusBar().showMessage(message)
 
@@ -373,11 +452,11 @@ class MainWindow(QMainWindow):
             self.update_step_view()
 
         self.playback_timer.start()
-        self.btnPlayPause.setText("⏸ Пауза")
+        self.btnPlayPause.setText(translate("pause", self.language))
 
     def pause_playback(self) -> None:
         self.playback_timer.stop()
-        self.btnPlayPause.setText("▶ Воспроизвести")
+        self.btnPlayPause.setText(translate("play", self.language))
 
     def advance_playback(self) -> None:
         if self.step_index is None or self.last_result is None:
@@ -424,7 +503,7 @@ class MainWindow(QMainWindow):
 
     def undo(self) -> None:
         if not self._undo_stack:
-            self.statusBar().showMessage("Нет действий для отмены")
+            self.statusBar().showMessage(self.localized_text("nothing_to_undo"))
             return
 
         vertices, edges, positions, file_path, restore_file_path = self._undo_stack.pop()
@@ -451,7 +530,7 @@ class MainWindow(QMainWindow):
             self.current_file_path = file_path
 
         self.refresh_tables()
-        self.statusBar().showMessage("Последнее действие отменено")
+        self.statusBar().showMessage(self.localized_text("last_action_undone"))
 
     def begin_vertex_move(self) -> None:
         self.save_undo()
@@ -475,7 +554,7 @@ class MainWindow(QMainWindow):
 
     def show_vertex_menu(self, vertex_id: int, pos: QPoint) -> None:
         menu = QMenu(self)
-        delete_action = menu.addAction("Удалить вершину")
+        delete_action = menu.addAction(self.localized_text("vertex_delete_action"))
 
         if menu.exec(pos) != delete_action:
             return
@@ -488,12 +567,12 @@ class MainWindow(QMainWindow):
         self.pending_vertex = None
         self.graph_scene.select_vertex(None)
 
-        self.statusBar().showMessage(f"Вершина {vertex_id} удалена")
+        self.statusBar().showMessage(self.localized_text("vertex_removed", vertex_id=vertex_id))
 
     def show_edge_menu(self, start: int, end: int, pos: QPoint) -> None:
         menu = QMenu(self)
-        edit_action = menu.addAction("Изменить вес")
-        delete_action = menu.addAction("Удалить ребро")
+        edit_action = menu.addAction(self.localized_text("edit_weight_action"))
+        delete_action = menu.addAction(self.localized_text("edge_delete_action"))
 
         action = menu.exec(pos)
 
@@ -504,13 +583,13 @@ class MainWindow(QMainWindow):
             self.rebuild_scene()
             self.pending_vertex = None
             self.graph_scene.select_vertex(None)
-            self.statusBar().showMessage(f"Ребро {start}–{end} удалено")
+            self.statusBar().showMessage(self.localized_text("edge_removed", start=start, end=end))
 
         elif action == edit_action:
             edge = next(e for e in self.graph.edges if e.start == start and e.end == end)
 
             weight, ok = QInputDialog.getDouble(
-                self, "Изменение веса", f"Новый вес ребра {start}–{end}:",
+                self, self.localized_text("change_weight_title"), self.localized_text("change_weight_prompt", start=start, end=end),
                 edge.weight, -1000000.0, 1000000.0, 2
             )
 
@@ -524,7 +603,7 @@ class MainWindow(QMainWindow):
             self.pending_vertex = None
             self.graph_scene.select_vertex(None)
 
-            self.statusBar().showMessage(f"Вес ребра {start}–{end} изменён на {weight:g}")
+            self.statusBar().showMessage(self.localized_text("edge_weight_changed", start=start, end=end, weight=f"{weight:g}"))
 
     def refresh_tables(self) -> None:
         self.tableVertices.blockSignals(True)
@@ -578,7 +657,7 @@ class MainWindow(QMainWindow):
             if not -1000000 <= weight <= 1000000:
                 raise ValueError
         except ValueError:
-            QMessageBox.warning(self, "Ошибка", "Введите корректный числовой вес")
+            QMessageBox.warning(self, self.localized_text("error_title"), self.localized_text("invalid_weight"))
             self.refresh_tables()
             return
 
@@ -590,7 +669,7 @@ class MainWindow(QMainWindow):
         self.invalidate_mst()
         self.rebuild_scene()
 
-        self.statusBar().showMessage(f"Вес ребра {start}–{end} изменён на {weight:g}")
+        self.statusBar().showMessage(self.localized_text("edge_weight_changed", start=start, end=end, weight=f"{weight:g}"))
 
     def add_vertex_from_table(self) -> None:
         rect = self.graph_scene.sceneRect()
@@ -603,17 +682,17 @@ class MainWindow(QMainWindow):
                     self.add_vertex_at(pos)
                     return
 
-        QMessageBox.warning(self, "Добавление вершины", "На полотне нет свободного места")
+        QMessageBox.warning(self, self.localized_text("add_vertex_title"), self.localized_text("no_space_for_vertex"))
 
     def add_edge_from_table(self) -> None:
         vertices = [str(vertex_id) for vertex_id in sorted(self.graph.vertices)]
 
         if len(vertices) < 2:
-            QMessageBox.warning(self, "Добавление ребра", "Необходимо минимум две вершины")
+            QMessageBox.warning(self, self.localized_text("add_edge_title"), self.localized_text("requires_two_vertices"))
             return
 
         first, ok = QInputDialog.getItem(
-            self, "Добавление ребра", "Начальная вершина:",
+            self, self.localized_text("add_edge_title"), self.localized_text("start_vertex_prompt"),
             vertices, 0, False
         )
 
@@ -623,7 +702,7 @@ class MainWindow(QMainWindow):
         remaining = [vertex_id for vertex_id in vertices if vertex_id != first]
 
         second, ok = QInputDialog.getItem(
-            self, "Добавление ребра", "Конечная вершина:",
+            self, self.localized_text("add_edge_title"), self.localized_text("end_vertex_prompt"),
             remaining, 0, False
         )
 
@@ -633,11 +712,11 @@ class MainWindow(QMainWindow):
         start, end = int(first), int(second)
 
         if self.graph.has_edge(start, end):
-            QMessageBox.warning(self, "Добавление ребра", "Такое ребро уже существует")
+            QMessageBox.warning(self, self.localized_text("add_edge_title"), self.localized_text("edge_already_exists"))
             return
 
         weight, ok = QInputDialog.getDouble(
-            self, "Добавление ребра", "Вес ребра:",
+            self, self.localized_text("add_edge_title"), self.localized_text("edge_weight_prompt"),
             1.0, -1000000.0, 1000000.0, 2
         )
 
@@ -650,13 +729,13 @@ class MainWindow(QMainWindow):
         self.graph_scene.add_edge(start, end, weight)
         self.refresh_tables()
 
-        self.statusBar().showMessage(f"Добавлено ребро {start}–{end}, вес {weight:g}")
+        self.statusBar().showMessage(self.localized_text("edge_added", start=start, end=end, weight=f"{weight:g}"))
 
     def delete_vertex_from_table(self) -> None:
         row = self.tableVertices.currentRow()
 
         if row < 0:
-            QMessageBox.warning(self, "Удаление вершины", "Сначала выберите строку")
+            QMessageBox.warning(self, self.localized_text("delete_vertex_title"), self.localized_text("select_row_first"))
             return
 
         vertex_id = int(self.tableVertices.item(row, 0).text())
@@ -669,13 +748,13 @@ class MainWindow(QMainWindow):
         self.pending_vertex = None
         self.graph_scene.select_vertex(None)
 
-        self.statusBar().showMessage(f"Вершина {vertex_id} удалена")
+        self.statusBar().showMessage(self.localized_text("vertex_removed", vertex_id=vertex_id))
 
     def delete_edge_from_table(self) -> None:
         row = self.tableEdges.currentRow()
 
         if row < 0:
-            QMessageBox.warning(self, "Удаление ребра", "Сначала выберите строку")
+            QMessageBox.warning(self, self.localized_text("delete_edge_title"), self.localized_text("select_row_first"))
             return
 
         start = int(self.tableEdges.item(row, 0).text())
@@ -689,7 +768,7 @@ class MainWindow(QMainWindow):
         self.pending_vertex = None
         self.graph_scene.select_vertex(None)
 
-        self.statusBar().showMessage(f"Ребро {start}–{end} удалено")
+        self.statusBar().showMessage(self.localized_text("edge_removed", start=start, end=end))
 
     def on_vertex_table_changed(self, item: QTableWidgetItem) -> None:
         if item.column() not in (1, 2):
@@ -705,7 +784,7 @@ class MainWindow(QMainWindow):
             if not isfinite(x) or not isfinite(y):
                 raise ValueError
         except ValueError:
-            QMessageBox.warning(self, "Ошибка координат", "Введите корректные числа")
+            QMessageBox.warning(self, self.localized_text("invalid_coord_title"), self.localized_text("invalid_coords"))
             self.refresh_tables()
             return
 
@@ -719,12 +798,12 @@ class MainWindow(QMainWindow):
         bounds = self.graph_scene.sceneRect().adjusted(18, 18, -18, -18)
 
         if not bounds.contains(new_pos):
-            QMessageBox.warning(self, "Ошибка координат", "Вершина выходит за границы полотна")
+            QMessageBox.warning(self, self.localized_text("invalid_coord_title"), self.localized_text("vertex_out_of_bounds"))
             self.refresh_tables()
             return
 
         if not self.graph_scene.can_place_vertex(new_pos, vertex_id):
-            QMessageBox.warning(self, "Ошибка координат", "Слишком близко к другой вершине")
+            QMessageBox.warning(self, self.localized_text("invalid_coord_title"), self.localized_text("vertex_too_close"))
             self.refresh_tables()
             return
 
@@ -733,16 +812,31 @@ class MainWindow(QMainWindow):
         self.graph_scene.move_vertex(vertex_id, new_pos)
         self.refresh_tables()
 
-        self.statusBar().showMessage(f"Координаты вершины {vertex_id} изменены")
+        self.statusBar().showMessage(self.localized_text("vertex_coords_changed", vertex_id=vertex_id))
 
     def show_settings(self) -> None:
-        QMessageBox.information(
-            self, "Настройки",
-            "Настройки приложения и выбор языка RU/EN добавим позже"
-        )
+        dialog = SettingsDialog(self.theme, self.language, self)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_theme = dialog.selected_theme()
+        new_language = dialog.selected_language()
+
+        if new_theme != self.theme:
+            self.apply_theme(new_theme)
+            self.theme = new_theme
+            self.settings.setValue("theme", new_theme)
+
+        if new_language != self.language:
+            self.language = new_language
+            self.settings.setValue("language", new_language)
+            self.update_language()
+
+        self.statusBar().showMessage(translate("settings_saved", self.language))
 
     def open_generate_graph_dialog(self) -> None:
-        dialog = GenerateGraphDialog(self)
+        dialog = GenerateGraphDialog(self, self.language)
 
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -753,20 +847,13 @@ class MainWindow(QMainWindow):
         max_weight = dialog.spinMaxWeight.value()
 
         if self.graph.vertices:
-            answer = QMessageBox.question(
-                self, "Генерация графа",
-                "Текущий граф будет заменён. Продолжить?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-
-            if answer != QMessageBox.StandardButton.Yes:
+            if not self.confirm_action("generate_graph_title", "replace_graph_prompt"):
                 return
 
         try:
             new_graph = generate_random_graph(vertex_count, edge_count, min_weight, max_weight)
         except GraphError as error:
-            QMessageBox.warning(self, "Ошибка генерации", str(error))
+            QMessageBox.warning(self, self.localized_text("generation_error_title"), self.localized_error(error))
             return
 
         self.save_undo(restore_file_path=True)
@@ -797,7 +884,7 @@ class MainWindow(QMainWindow):
         self.tabGraphEditor.setCurrentWidget(self.tabCanvas)
 
         self.statusBar().showMessage(
-            f"Сгенерирован граф: {vertex_count} вершин, {edge_count} рёбер"
+            self.localized_text("generated_graph", vertices=vertex_count, edges=edge_count)
         )
 
     def write_graph_to_file(self, path: Path) -> None:
@@ -811,12 +898,12 @@ class MainWindow(QMainWindow):
             save_graph(self.graph, positions, path)
         except (OSError, ValueError) as error:
             QMessageBox.critical(
-                self, "Ошибка сохранения", str(error)
+                self, self.localized_text("save_error_title"), str(error)
             )
             return
 
         self.current_file_path = path
-        self.statusBar().showMessage(f"Граф сохранён: {path.name}")
+        self.statusBar().showMessage(self.localized_text("graph_saved", filename=path.name))
 
     def save_current_graph(self) -> None:
         if self.current_file_path is not None:
@@ -843,9 +930,9 @@ class MainWindow(QMainWindow):
 
         filename, selected_filter = QFileDialog.getSaveFileName(
             self,
-            "Сохранить граф как...",
+            self.localized_text("save_graph_as_title"),
             str(suggested_path),
-            "Файлы графов (*.json)"
+            self.localized_text("graph_files_filter")
         )
 
         if not filename:
@@ -859,7 +946,10 @@ class MainWindow(QMainWindow):
         self.write_graph_to_file(path)
 
     def load_graph_from_file(self) -> None:
-        filename, _ = QFileDialog.getOpenFileName(self,"Загрузить граф", str(self.graphs_dir),"Файлы графов (*.json)")
+        filename, _ = QFileDialog.getOpenFileName(
+            self, self.localized_text("load_graph_title"),
+            str(self.graphs_dir), self.localized_text("graph_files_filter")
+        )
 
         if not filename:
             return
@@ -869,7 +959,7 @@ class MainWindow(QMainWindow):
         try:
             new_graph, positions = load_graph(path)
         except (OSError, ValueError) as error:
-            QMessageBox.critical(self, "Ошибка загрузки", str(error))
+            QMessageBox.critical(self, self.localized_text("load_error_title"), str(error))
             return
 
         bounds = self.graph_scene.sceneRect().adjusted(18, 18, -18, -18)
@@ -877,8 +967,8 @@ class MainWindow(QMainWindow):
         for vertex_id, (x, y) in positions.items():
             if not bounds.contains(QPointF(x, y)):
                 QMessageBox.warning(
-                    self, "Ошибка загрузки",
-                    f"Вершина {vertex_id} находится за границами полотна"
+                    self, self.localized_text("load_error_title"),
+                    self.localized_text("loaded_vertex_out_of_bounds", vertex_id=vertex_id)
                 )
                 return
 
@@ -888,21 +978,13 @@ class MainWindow(QMainWindow):
             for second_id, (x2, y2) in vertices[index + 1:]:
                 if hypot(x1 - x2, y1 - y2) < 50:
                     QMessageBox.warning(
-                        self, "Ошибка загрузки",
-                        f"Вершины {first_id} и {second_id} расположены слишком близко"
+                        self, self.localized_text("load_error_title"),
+                        self.localized_text("loaded_vertices_too_close", first=first_id, second=second_id)
                     )
                     return
 
         if self.graph.vertices:
-            answer = QMessageBox.question(
-                self,
-                "Загрузка графа",
-                "Текущий граф будет заменён. Продолжить?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-
-            if answer != QMessageBox.StandardButton.Yes:
+            if not self.confirm_action("load_graph_title", "replace_graph_prompt"):
                 return
 
         self.save_undo(restore_file_path=True)
@@ -926,7 +1008,194 @@ class MainWindow(QMainWindow):
         self.refresh_tables()
         self.tabGraphEditor.setCurrentWidget(self.tabCanvas)
 
-        self.statusBar().showMessage(f"Загружен граф: {path.name}")
+        self.statusBar().showMessage(self.localized_text("graph_loaded", filename=path.name))
 
+    def apply_theme(self, theme: str) -> None:
+        theme_path = (
+                Path(__file__).resolve().parents[2]
+                / "styles"
+                / f"{theme}.qss"
+        )
+
+        stylesheet = theme_path.read_text(encoding="utf-8")
+
+        QApplication.instance().setStyleSheet(stylesheet)
+
+    def update_language(self) -> None:
+        lang = self.language
+
+        self.menuFile.setTitle(translate("file", lang))
+        self.controlPanel.setTitle(translate("controls", lang))
+
+        actions = [
+            (self.actionSave, "save"),
+            (self.actionSaveAs, "save_as"),
+            (self.actionLoad, "load"),
+            (self.actionSettings, "settings"),
+            (self.actionExit, "exit")
+        ]
+
+        for action, key in actions:
+            action.setText(translate(key, lang))
+
+        widgets = [
+            (self.labelVerticesTable, "vertices"),
+            (self.labelEdgesTable, "edges"),
+            (self.btnAddVertexTable, "add_vertex"),
+            (self.btnDeleteVertexTable, "delete_vertex"),
+            (self.btnAddEdgeTable, "add_edge"),
+            (self.btnDeleteEdgeTable, "delete_edge"),
+            (self.labelAlgorithm, "algorithm"),
+            (self.btnBuildMst, "build_mst"),
+            (self.btnShowOriginalGraph, "original_graph"),
+            (self.btnGenerateGraph, "generate_graph"),
+            (self.btnClearCanvas, "clear_canvas"),
+            (self.btnStepMode, "step_mode"),
+            (self.btnPreviousStep, "previous_step"),
+            (self.btnNextStep, "next_step"),
+            (self.label, "speed"),
+        ]
+
+        for widget, key in widgets:
+            widget.setText(translate(key, lang))
+
+        self.tabGraphEditor.setTabText(
+            self.tabGraphEditor.indexOf(self.tabCanvas),
+            translate("canvas", lang)
+        )
+
+        self.tabGraphEditor.setTabText(
+            self.tabGraphEditor.indexOf(self.tabTables),
+            translate("tables", lang)
+        )
+
+        self.tableEdges.setHorizontalHeaderLabels([
+            translate("start", lang),
+            translate("end", lang),
+            translate("weight", lang)
+        ])
+
+        self.comboAlgorithm.blockSignals(True)
+
+        self.comboAlgorithm.setItemText(0, translate("kruskal", lang))
+        self.comboAlgorithm.setItemText(1, translate("prim", lang))
+
+        self.comboAlgorithm.blockSignals(False)
+
+        playback_key = "pause" if self.playback_timer.isActive() else "play"
+        self.btnPlayPause.setText(translate(playback_key, lang))
+
+        self.progressSteps.setFormat(translate("step_progress", lang))
+
+        self.update_result_labels(preview=self.decision_timer.isActive())
+
+    def update_result_labels(self, preview: bool = False) -> None:
+        if self.last_result is None:
+            weight_text = "—"
+            edge_count = 0
+
+        elif self.step_index is None:
+            weight_text = f"{self.last_result.total_weight:g}"
+            edge_count = len(self.last_result.edges)
+
+        else:
+            steps = self.last_result.steps[:self.step_index]
+
+            if preview:
+                steps = steps[:-1]
+
+            selected_edges = [
+                step.edge for step in steps if step.accepted
+            ]
+
+            edge_count = len(selected_edges)
+            weight = sum(edge.weight for edge in selected_edges)
+            weight_text = f"{weight:g}"
+
+        self.labelTotalWeight.setText(
+            translate("total_weight", self.language).format(
+                value=weight_text
+            )
+        )
+
+        self.labelSelectedEdges.setText(
+            translate("selected_edges", self.language).format(
+                count=edge_count
+            )
+        )
+
+        time_value = "—"
+
+        if self.execution_time_ms is not None:
+            unit = "мс" if self.language == "ru" else "ms"
+            time_value = f"{self.execution_time_ms:.3f} {unit}"
+
+        self.labelExecutionTime.setText(self.localized_text("execution_time", value=time_value))
+
+    def queue_current_calculation(self, result: MSTResult, algorithm_index: int, run_mode: str) -> None:
+        positions = {}
+
+        for vertex_id in self.graph.vertices:
+            pos = self.graph_scene.vertex_position(vertex_id)
+            positions[vertex_id] = (pos.x(), pos.y())
+
+        data = {
+            "algorithm": "kruskal" if algorithm_index == 0 else "prim",
+            "run_mode": run_mode,
+            "vertex_count": len(self.graph.vertices),
+            "edge_count": len(self.graph.edges),
+            "graph_data": graph_to_dict(self.graph, positions),
+            "result_edges": [edge_to_dict(edge) for edge in result.edges],
+            "steps": [{"edge": edge_to_dict(step.edge), "accepted": step.accepted} for step in result.steps],
+            "total_weight": result.total_weight,
+            "duration_ms": self.execution_time_ms
+        }
+
+        queue_calculation(data)
+
+    def load_history(self) -> None:
+        if self.history_loader is not None:
+            return
+
+        self.btnRefreshHistory.setEnabled(False)
+
+        self.history_loader = CalculationsLoader(self)
+        self.history_loader.loaded.connect(self.show_history)
+        self.history_loader.failed.connect(self.history_load_failed)
+        self.history_loader.finished.connect(self.history_load_finished)
+        self.history_loader.start()
+
+    def show_history(self, calculations: list[dict]) -> None:
+        self.tableHistory.setSortingEnabled(False)
+        self.tableHistory.setRowCount(len(calculations))
+
+        for row, calculation in enumerate(calculations):
+            algorithm = self.localized_text(calculation["algorithm"])
+            mode = "Обычный" if calculation["run_mode"] == "build" else "Пошаговый"
+
+            values = [
+                calculation["id"],
+                calculation["created_at"].strftime("%d.%m.%Y %H:%M:%S"),
+                algorithm,
+                mode,
+                calculation["vertex_count"],
+                calculation["edge_count"],
+                f'{calculation["total_weight"]:.2f}',
+                f'{calculation["duration_ms"]:.4f}'
+            ]
+
+            for column, value in enumerate(values):
+                self.tableHistory.setItem(row, column, QTableWidgetItem(str(value)))
+
+        self.tableHistory.setSortingEnabled(True)
+        self.statusBar().showMessage(f"Загружено расчётов: {len(calculations)}")
+
+    def history_load_failed(self) -> None:
+        self.statusBar().showMessage("Не удалось загрузить историю расчётов")
+
+    def history_load_finished(self) -> None:
+        self.btnRefreshHistory.setEnabled(True)
+        self.history_loader.deleteLater()
+        self.history_loader = None
 
 
