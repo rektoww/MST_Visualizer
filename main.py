@@ -1,5 +1,4 @@
 import sys
-import logging
 
 from PyQt6.QtWidgets import QApplication
 from app.views.main_window import MainWindow
@@ -21,6 +20,12 @@ def main():
 
     if window.history_loader is not None:
         window.history_loader.wait()
+
+    if window.calculation_loader is not None:
+        window.calculation_loader.wait()
+
+    if window.events_loader is not None:
+        window.events_loader.wait()
 
     record_event("INFO", "app", "app.stopped", "MST Visualizer stopped")
     stop_event_worker()

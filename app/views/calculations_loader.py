@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from app.database.calculations import get_calculations
+from app.database.calculations import get_calculations, get_calculation_by_id
 
 
 class CalculationsLoader(QThread):
@@ -14,3 +14,20 @@ class CalculationsLoader(QThread):
             self.failed.emit()
         else:
             self.loaded.emit(calculations)
+
+
+class CalculationDetailsLoader(QThread):
+    loaded = pyqtSignal(dict)
+    failed = pyqtSignal()
+
+    def __init__(self, calculation_id: int, parent=None):
+        super().__init__(parent)
+        self.calculation_id = calculation_id
+
+    def run(self) -> None:
+        calculation = get_calculation_by_id(self.calculation_id)
+
+        if calculation is None:
+            self.failed.emit()
+        else:
+            self.loaded.emit(calculation)

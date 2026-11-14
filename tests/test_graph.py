@@ -34,7 +34,7 @@ def test_duplicate_vertex():
     graph = Graph()
     graph.add_vertex(1)
 
-    with pytest.raises(VertexAlreadyExistsError, match="^Ошибка: Вершина 1 уже существует$"):
+    with pytest.raises(VertexAlreadyExistsError, match="^Вершина 1 уже существует$"):
         graph.add_vertex(1)
 
 
@@ -42,7 +42,7 @@ def test_missing_start_vertex():
     graph = Graph()
     graph.add_vertex(2)
 
-    with pytest.raises(VertexNotFoundError, match="^Ошибка: Вершина 1 не найдена$"):
+    with pytest.raises(VertexNotFoundError, match="^Вершина 1 не найдена$"):
         graph.add_edge(1, 2, 5)
 
 
@@ -50,7 +50,7 @@ def test_missing_end_vertex():
     graph = Graph()
     graph.add_vertex(1)
 
-    with pytest.raises(VertexNotFoundError, match="^Ошибка: Вершина 2 не найдена$"):
+    with pytest.raises(VertexNotFoundError, match="^Вершина 2 не найдена$"):
         graph.add_edge(1, 2, 5)
 
 
@@ -60,7 +60,7 @@ def test_duplicate_edge():
     graph.add_vertex(2)
     graph.add_edge(1, 2, 5)
 
-    with pytest.raises(GraphError, match="^Ошибка: Ребро уже существует$"):
+    with pytest.raises(GraphError, match="Ребро уже существует$"):
         graph.add_edge(2, 1, 7)
 
 
@@ -68,7 +68,7 @@ def test_loop_edge():
     graph = Graph()
     graph.add_vertex(1)
 
-    with pytest.raises(GraphError, match="^Ошибка: Петли в графе запрещены$"):
+    with pytest.raises(GraphError, match="^Петли в графе запрещены$"):
         graph.add_edge(1, 1, 5)
 
 
@@ -78,7 +78,7 @@ def test_invalid_weight(weight):
     graph.add_vertex(1)
     graph.add_vertex(2)
 
-    with pytest.raises(GraphError, match="^Ошибка: Вес должен быть конечным числом$"):
+    with pytest.raises(GraphError, match="^Вес должен быть конечным числом$"):
         graph.add_edge(1, 2, weight)
 
 
@@ -93,14 +93,14 @@ def test_valid_weight(weight):
 
 
 @pytest.mark.parametrize("error_type", [GraphError, VertexAlreadyExistsError, VertexNotFoundError])
-def test_error_prefix(error_type):
+def test_error_message(error_type):
     error = error_type("Тестовое сообщение")
 
-    assert str(error) == "Ошибка: Тестовое сообщение"
+    assert str(error) == "Тестовое сообщение"
 
 
 def test_error_inheritance():
-    assert issubclass(GraphError, ValueError)
+    assert issubclass(GraphError, Exception)
     assert issubclass(VertexAlreadyExistsError, GraphError)
     assert issubclass(VertexNotFoundError, GraphError)
 

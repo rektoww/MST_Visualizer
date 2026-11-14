@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import json
 from PyQt6 import uic
 from PyQt6.QtWidgets import QMainWindow, QInputDialog, QMessageBox, QGraphicsView, QMenu, QTableWidgetItem, QDialog, QFileDialog, QApplication
 from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, QPoint, QSettings
@@ -12,13 +13,16 @@ from app.views.generate_graph_dialog import GenerateGraphDialog
 from app.core.graph_generator import generate_random_graph
 from app.core.graph_storage import save_graph, load_graph, graph_to_dict, edge_to_dict
 from app.views.settings_dialog import SettingsDialog
-from app.views.calculations_loader import CalculationsLoader
+from app.views.calculations_loader import CalculationsLoader, CalculationDetailsLoader
 from app.i18n import translate
-from app.core.algorithms.result import MSTResult
-from app.event_logger import queue_calculation
+from app.core.algorithms.result import MSTResult, AlgorithmStep
+from app.event_logger import queue_calculation, record_event
+from app.views.event_logs_loader import EventLogsLoader
 
 from app.core.algorithms.kruskal import kruskal
 from app.core.algorithms.prim import prim
+from app.core.edge import Edge
+
 
 from math import isfinite, cos, sin, pi, hypot
 from time import perf_counter
@@ -46,10 +50,19 @@ class MainWindow(QMainWindow):
 
         self.apply_theme(self.theme)
 
+        self.comboEventLevel.addItem("", None)
+
+        for level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            self.comboEventLevel.addItem(level, level)
+
         # Пути и состояние приложения
         self.graphs_dir = project_dir / "data" / "graphs"
         self.current_file_path: Path | None = None
         self.history_loader: CalculationsLoader | None = None
+        self.calculation_loader: CalculationDetailsLoader | None = None
+        self.history_records: list[dict] = []
+        self.events_loader: EventLogsLoader | None = None
+        self.events_records: list[dict] = []
 
         self.pending_vertex: int | None = None
         self.last_result = None
@@ -126,6 +139,11 @@ class MainWindow(QMainWindow):
 
         # История расчётов
         self.btnRefreshHistory.clicked.connect(self.load_history)
+        self.tableHistory.cellDoubleClicked.connect(self.open_history_calculation)
+
+        # Журнал
+        self.btnRefreshEvents.clicked.connect(self.load_event_logs)
+        self.comboEventLevel.currentIndexChanged.connect(self.render_event_logs)
 
         # Главное меню
         self.actionSave.triggered.connect(self.save_current_graph)
@@ -1019,11 +1037,16 @@ class MainWindow(QMainWindow):
 
         stylesheet = theme_path.read_text(encoding="utf-8")
 
+        icons_dir = Path(__file__).resolve().parents[2] / "assets"
+        stylesheet = stylesheet.replace("__SPIN_UP__", (icons_dir / f"spin-up-{theme}.svg").as_posix())
+        stylesheet = stylesheet.replace("__SPIN_DOWN__", (icons_dir / f"spin-down-{theme}.svg").as_posix())
+
         QApplication.instance().setStyleSheet(stylesheet)
 
     def update_language(self) -> None:
         lang = self.language
 
+        # Главное меню и панель управления
         self.menuFile.setTitle(translate("file", lang))
         self.controlPanel.setTitle(translate("controls", lang))
 
@@ -1038,6 +1061,7 @@ class MainWindow(QMainWindow):
         for action, key in actions:
             action.setText(translate(key, lang))
 
+        # Кнопки и подписи
         widgets = [
             (self.labelVerticesTable, "vertices"),
             (self.labelEdgesTable, "edges"),
@@ -1054,40 +1078,76 @@ class MainWindow(QMainWindow):
             (self.btnPreviousStep, "previous_step"),
             (self.btnNextStep, "next_step"),
             (self.label, "speed"),
+            (self.btnRefreshHistory, "history_refresh")
+            (self.labelEventLevel, "events_level_filter"),
+            (self.btnRefreshEvents, "events_refresh")
         ]
 
         for widget, key in widgets:
             widget.setText(translate(key, lang))
 
-        self.tabGraphEditor.setTabText(
-            self.tabGraphEditor.indexOf(self.tabCanvas),
-            translate("canvas", lang)
-        )
+        # Названия вкладок
+        tabs = [
+            (self.tabCanvas, "canvas"),
+            (self.tabTables, "tables"),
+            (self.tabHistory, "history_tab")
+            (self.tabEvents, "events_tab")
+        ]
 
-        self.tabGraphEditor.setTabText(
-            self.tabGraphEditor.indexOf(self.tabTables),
-            translate("tables", lang)
-        )
+        for tab, key in tabs:
+            self.tabGraphEditor.setTabText(
+                self.tabGraphEditor.indexOf(tab),
+                translate(key, lang)
+            )
 
+        # Заголовки таблиц
         self.tableEdges.setHorizontalHeaderLabels([
             translate("start", lang),
             translate("end", lang),
             translate("weight", lang)
         ])
 
-        self.comboAlgorithm.blockSignals(True)
+        self.tableHistory.setHorizontalHeaderLabels([
+            "ID",
+            translate("history_date", lang),
+            translate("history_algorithm", lang),
+            translate("history_mode", lang),
+            translate("history_vertices", lang),
+            translate("history_edges", lang),
+            translate("history_weight", lang),
+            translate("history_time", lang)
+        ])
 
+        self.tableEvents.setHorizontalHeaderLabels([
+            "ID",
+            translate("events_date", lang),
+            translate("events_level", lang),
+            translate("events_source", lang),
+            translate("events_code", lang),
+            translate("events_message", lang),
+            translate("events_calculation", lang)
+        ])
+
+        self.comboEventLevel.setItemText(0, translate("events_all", lang))
+
+        # Выбор алгоритма
+        self.comboAlgorithm.blockSignals(True)
         self.comboAlgorithm.setItemText(0, translate("kruskal", lang))
         self.comboAlgorithm.setItemText(1, translate("prim", lang))
-
         self.comboAlgorithm.blockSignals(False)
 
+        # Пошаговое воспроизведение
         playback_key = "pause" if self.playback_timer.isActive() else "play"
         self.btnPlayPause.setText(translate(playback_key, lang))
-
         self.progressSteps.setFormat(translate("step_progress", lang))
 
+        # Обновление результатов
         self.update_result_labels(preview=self.decision_timer.isActive())
+
+        self.render_event_logs()
+
+        if self.history_records:
+            self.show_history(self.history_records)
 
     def update_result_labels(self, preview: bool = False) -> None:
         if self.last_result is None:
@@ -1166,12 +1226,14 @@ class MainWindow(QMainWindow):
         self.history_loader.start()
 
     def show_history(self, calculations: list[dict]) -> None:
+        self.history_records = calculations
+
         self.tableHistory.setSortingEnabled(False)
         self.tableHistory.setRowCount(len(calculations))
 
         for row, calculation in enumerate(calculations):
             algorithm = self.localized_text(calculation["algorithm"])
-            mode = "Обычный" if calculation["run_mode"] == "build" else "Пошаговый"
+            mode = self.localized_text("history_mode_build" if calculation["run_mode"] == "build" else "history_mode_step")
 
             values = [
                 calculation["id"],
@@ -1188,7 +1250,7 @@ class MainWindow(QMainWindow):
                 self.tableHistory.setItem(row, column, QTableWidgetItem(str(value)))
 
         self.tableHistory.setSortingEnabled(True)
-        self.statusBar().showMessage(f"Загружено расчётов: {len(calculations)}")
+        self.statusBar().showMessage(self.localized_text("history_loaded_count", count=len(calculations)))
 
     def history_load_failed(self) -> None:
         self.statusBar().showMessage("Не удалось загрузить историю расчётов")
@@ -1197,5 +1259,162 @@ class MainWindow(QMainWindow):
         self.btnRefreshHistory.setEnabled(True)
         self.history_loader.deleteLater()
         self.history_loader = None
+
+    def open_history_calculation(self, row: int, column: int) -> None:
+        if self.calculation_loader is not None:
+            return
+
+        item = self.tableHistory.item(row, 0)
+        if item is None:
+            return
+
+        calculation_id = int(item.text())
+
+        self.calculation_loader = CalculationDetailsLoader(calculation_id, self)
+        self.calculation_loader.loaded.connect(self.restore_history_calculation)
+        self.calculation_loader.failed.connect(self.calculation_load_failed)
+        self.calculation_loader.finished.connect(self.calculation_load_finished)
+        self.calculation_loader.start()
+
+    def calculation_load_failed(self) -> None:
+        self.statusBar().showMessage(self.localized_text("history_load_error"))
+
+    def calculation_load_finished(self) -> None:
+        self.calculation_loader.deleteLater()
+        self.calculation_loader = None
+
+    def restore_history_calculation(self, data: dict) -> None:
+        try:
+            graph_data = data["graph_data"]
+            new_graph = Graph()
+            positions = {}
+
+            for vertex in graph_data["vertices"]:
+                vertex_id = int(vertex["id"])
+                new_graph.add_vertex(vertex_id)
+                positions[vertex_id] = (float(vertex["x"]), float(vertex["y"]))
+
+            for edge in graph_data["edges"]:
+                new_graph.add_edge(edge["start"], edge["end"], edge["weight"])
+
+            if len(new_graph.vertices) != data["vertex_count"] or len(new_graph.edges) != data["edge_count"]:
+                raise GraphError("Количество вершин или рёбер не соответствует сохранённому расчёту", code="history_graph_mismatch")
+
+            def restore_edge(edge: dict) -> Edge:
+                return Edge(edge["start"], edge["end"], edge["weight"])
+
+            result_edges = tuple(restore_edge(edge) for edge in data["result_edges"])
+            steps = tuple(AlgorithmStep(restore_edge(step["edge"]), step["accepted"]) for step in data["steps"])
+            result = MSTResult(result_edges, data["total_weight"], steps)
+
+            bounds = self.graph_scene.sceneRect().adjusted(18, 18, -18, -18)
+            if any(not bounds.contains(QPointF(x, y)) for x, y in positions.values()):
+                raise GraphError("Координаты сохранённого графа находятся вне полотна", code="history_graph_out_of_bounds")
+
+        except GraphError as error:
+            QMessageBox.warning(self, self.localized_text("history_open_error"), self.localized_error(error))
+            return
+
+        except (KeyError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, self.localized_text("history_open_error"), str(error))
+            return
+
+        if self.graph.vertices and not self.confirm_action("load_graph_title", "replace_graph_prompt"):
+            return
+
+        self.save_undo(restore_file_path=True)
+        self.invalidate_mst()
+        self.pending_vertex = None
+        self.current_file_path = None
+
+        self.graph = new_graph
+        self.graph_scene.clear_graph()
+        self.graphView.resetTransform()
+
+        for vertex_id, (x, y) in sorted(positions.items()):
+            self.graph_scene.add_vertex(vertex_id, QPointF(x, y))
+
+        for edge in self.graph.edges:
+            self.graph_scene.add_edge(edge.start, edge.end, edge.weight)
+
+        self.comboAlgorithm.blockSignals(True)
+        self.comboAlgorithm.setCurrentIndex(0 if data["algorithm"] == "kruskal" else 1)
+        self.comboAlgorithm.blockSignals(False)
+
+        self.last_result = result
+        self.execution_time_ms = data["duration_ms"]
+        self.btnShowOriginalGraph.setEnabled(True)
+
+        if data["run_mode"] == "step":
+            self.step_index = 0
+            self.update_step_view()
+        else:
+            self.step_index = None
+            self.graph_scene.show_mst(result.edges)
+            self.progressSteps.setVisible(False)
+            self.update_result_labels()
+
+        self.refresh_tables()
+        self.tabGraphEditor.setCurrentWidget(self.tabCanvas)
+        self.statusBar().showMessage(self.localized_text("history_opened", id=data["id"]))
+
+        record_event("INFO", "history", "history.opened", "Calculation opened from history", calculation_id=data["id"])
+
+    def load_event_logs(self) -> None:
+        if self.events_loader is not None:
+            return
+
+        self.btnRefreshEvents.setEnabled(False)
+
+        self.events_loader = EventLogsLoader(self)
+        self.events_loader.loaded.connect(self.event_logs_loaded)
+        self.events_loader.failed.connect(self.event_logs_failed)
+        self.events_loader.finished.connect(self.event_logs_finished)
+        self.events_loader.start()
+
+    def event_logs_loaded(self, events: list[dict]) -> None:
+        self.events_records = events
+        self.render_event_logs()
+        self.statusBar().showMessage(self.localized_text("events_loaded", count=len(events)))
+
+    def event_logs_failed(self) -> None:
+        self.statusBar().showMessage(self.localized_text("events_load_error"))
+
+    def event_logs_finished(self) -> None:
+        self.btnRefreshEvents.setEnabled(True)
+        self.events_loader.deleteLater()
+        self.events_loader = None
+
+    def render_event_logs(self) -> None:
+        selected_level = self.comboEventLevel.currentData()
+
+        if selected_level is None:
+            events = self.events_records
+        else:
+            events = [event for event in self.events_records if event["level"] == selected_level]
+
+        self.tableEvents.setSortingEnabled(False)
+        self.tableEvents.setRowCount(len(events))
+
+        for row, event in enumerate(events):
+            date = event["created_at"].strftime("%d.%m.%Y %H:%M:%S")
+            values = [
+                event["id"],
+                date,
+                event["level"],
+                event["source"],
+                event["event_code"],
+                event["message"],
+                event.get("calculation_id") or ""
+            ]
+
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                self.tableEvents.setItem(row, column, item)
+
+                if column == 5 and event.get("details"):
+                    item.setToolTip(json.dumps(event["details"], ensure_ascii=False, indent=2, default=str))
+
+        self.tableEvents.setSortingEnabled(True)
 
 
