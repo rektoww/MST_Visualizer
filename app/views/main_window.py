@@ -1078,9 +1078,9 @@ class MainWindow(QMainWindow):
             (self.btnPreviousStep, "previous_step"),
             (self.btnNextStep, "next_step"),
             (self.label, "speed"),
-            (self.btnRefreshHistory, "history_refresh")
+            (self.btnRefreshHistory, "history_refresh"),
             (self.labelEventLevel, "events_level_filter"),
-            (self.btnRefreshEvents, "events_refresh")
+            (self.btnRefreshEvents, "events_refresh"),
         ]
 
         for widget, key in widgets:
@@ -1090,8 +1090,8 @@ class MainWindow(QMainWindow):
         tabs = [
             (self.tabCanvas, "canvas"),
             (self.tabTables, "tables"),
-            (self.tabHistory, "history_tab")
-            (self.tabEvents, "events_tab")
+            (self.tabHistory, "history_tab"),
+            (self.tabEvents, "events_tab"),
         ]
 
         for tab, key in tabs:
