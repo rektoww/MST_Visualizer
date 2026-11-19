@@ -2,7 +2,7 @@ from heapq import heappop, heappush
 
 from app.core.algorithms.result import AlgorithmStep, MSTResult
 from app.core.exceptions import GraphError
-from app.core.graph import Graph
+from app.core.graph import Graph, check_total_weight
 
 def prim(graph: Graph) -> MSTResult:
     if not graph.vertices:
@@ -48,4 +48,5 @@ def prim(graph: Graph) -> MSTResult:
     if len(visited) != len(graph.vertices):
         raise GraphError("Невозможно построить остов: граф несвязный", code="graph_disconnected")
 
+    check_total_weight(total_weight)
     return MSTResult(tuple(selected_edges), total_weight, tuple(steps))

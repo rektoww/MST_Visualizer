@@ -42,3 +42,9 @@ def test_invalid_counts(vertices, edges):
 def test_invalid_weight_range():
     with pytest.raises(GraphError):
         generate_random_graph(5, 7, 20, 1)
+
+
+@pytest.mark.parametrize("bounds", [(1.234, 1.234), (1.234, 1.235), (-1e308, 1e308)])
+def test_generated_weights_stay_within_requested_bounds(bounds):
+    graph = generate_random_graph(5, 8, *bounds)
+    assert all(bounds[0] <= edge.weight <= bounds[1] for edge in graph.edges)

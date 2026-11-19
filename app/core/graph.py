@@ -4,6 +4,18 @@ from app.core.edge import Edge
 
 from app.core.exceptions import GraphError, VertexAlreadyExistsError, VertexNotFoundError
 
+
+def is_number(value) -> bool:
+    try:
+        return type(value) in (int, float) and isfinite(value)
+    except OverflowError:
+        return False
+
+
+def check_total_weight(weight: float) -> None:
+    if not isfinite(weight):
+        raise GraphError("Итоговый вес выходит за числовой диапазон", code="mst_weight_overflow")
+
 class Graph:
     def __init__(self) -> None:
         self._vertices: set[int] = set()
@@ -34,7 +46,7 @@ class Graph:
         if start == end:
             raise GraphError("Петли в графе запрещены", code="graph_self_loop")
 
-        if not isfinite(weight):
+        if not is_number(weight):
             raise GraphError("Вес должен быть конечным числом", code="graph_invalid_weight")
 
         first, second = sorted((start, end))
@@ -73,7 +85,7 @@ class Graph:
         if key not in self._edges:
             raise GraphError("Ребро не найдено", code="graph_edge_not_found")
 
-        if not isfinite(weight):
+        if not is_number(weight):
             raise GraphError("Вес должен быть конечным числом", code="graph_invalid_weight")
 
         self._edges[key] = Edge(key[0], key[1], float(weight))

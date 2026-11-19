@@ -1,3 +1,5 @@
+from math import isfinite
+
 from PyQt6.QtCore import Qt, QPointF, QLineF, pyqtSignal, QRectF, QPoint
 from PyQt6.QtGui import QBrush, QPen, QTransform, QColor, QFont, QPainterPath
 from PyQt6.QtWidgets import QGraphicsScene, QGraphicsSceneMouseEvent, QGraphicsTextItem, QGraphicsPathItem
@@ -9,11 +11,11 @@ class GraphScene(QGraphicsScene):
     MIN_VERTEX_DISTANCE = 50
 
     empty_space_clicked = pyqtSignal(QPointF)
-    vertex_clicked = pyqtSignal(int)
+    vertex_clicked = pyqtSignal(object)
     vertex_move_started = pyqtSignal()
-    vertex_moved = pyqtSignal(int)
-    vertex_context_requested = pyqtSignal(int, QPoint)
-    edge_context_requested = pyqtSignal(int, int, QPoint)
+    vertex_moved = pyqtSignal(object)
+    vertex_context_requested = pyqtSignal(object, QPoint)
+    edge_context_requested = pyqtSignal(object, object, QPoint)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -81,10 +83,6 @@ class GraphScene(QGraphicsScene):
         self._dragging = True
 
         new_pos = self._vertex_start_pos + event.scenePos() - self._press_pos
-
-        if not self.sceneRect().adjusted(18, 18, -18, -18).contains(new_pos):
-            event.accept()
-            return
 
         if not self.can_place_vertex(new_pos, self._pressed_vertex):
             event.accept()
@@ -189,9 +187,16 @@ class GraphScene(QGraphicsScene):
         line.setData(1, (first, second))
         badge.setData(1, (first, second))
 
+    def contains_vertex_position(self, pos: QPointF) -> bool:
+        # Existing files may contain centers right on the edge of the canvas.
+        return isfinite(pos.x()) and isfinite(pos.y()) and self.sceneRect().contains(pos)
+
+    def vertices_are_separated(self, first: QPointF, second: QPointF) -> bool:
+        return QLineF(first, second).length() >= self.MIN_VERTEX_DISTANCE
+
     def can_place_vertex(self, pos: QPointF, exclude_vertex: int | None = None) -> bool:
-        return all(
-            QLineF(pos, circle.pos()).length() >= self.MIN_VERTEX_DISTANCE
+        return self.contains_vertex_position(pos) and all(
+            self.vertices_are_separated(pos, circle.pos())
             for vertex_id, circle in self._vertex_items.items()
             if vertex_id != exclude_vertex
         )

@@ -367,6 +367,54 @@ TRANSLATIONS["en"].update({
 TRANSLATIONS["ru"]["execution_time"] = "Время расчёта: {value}"
 TRANSLATIONS["en"]["execution_time"] = "Execution time: {value}"
 
+TRANSLATIONS["ru"].update({
+    "unsaved_graph": "В графе есть несохранённые изменения. Сохранить их?",
+    "discard_changes": "Без сохранения",
+    "graph_invalid_json": "Некорректный JSON-файл",
+    "graph_invalid_version": "Неподдерживаемая версия формата графа",
+    "graph_invalid_records": "В файле отсутствуют списки вершин или рёбер",
+    "graph_invalid_vertex": "Некорректные данные вершины",
+    "graph_invalid_edge": "Некорректные данные ребра",
+    "graph_invalid_positions": "Координаты вершин не соответствуют графу",
+    "graph_read_error": "Не удалось прочитать файл графа",
+    "graph_write_error": "Не удалось записать файл графа",
+    "generate_vertex_count": "Количество вершин должно быть от 2 до 30",
+    "generate_edge_count": "Недопустимое количество рёбер",
+    "generate_weight_range": "Некорректный диапазон весов",
+    "mst_weight_overflow": "Итоговый вес выходит за числовой диапазон",
+    "history_list_load_error": "Не удалось загрузить историю расчётов",
+    "history_not_found": "Расчёт больше не доступен в истории",
+    "history_invalid": "Данные сохранённого расчёта повреждены или не соответствуют графу",
+    "history_save_pending": "Ожидают записи в историю: {count}",
+    "history_save_failed": "Не подтверждена запись из-за ошибки: {count}",
+    "history_save_unconfirmed": "Истекло время ожидания записи в историю: {count}",
+    "history_save_success": "Расчёт сохранён в истории",
+})
+
+TRANSLATIONS["en"].update({
+    "unsaved_graph": "The graph has unsaved changes. Save them?",
+    "discard_changes": "Discard",
+    "graph_invalid_json": "Invalid JSON file",
+    "graph_invalid_version": "Unsupported graph format version",
+    "graph_invalid_records": "The file is missing the vertex or edge list",
+    "graph_invalid_vertex": "Invalid vertex data",
+    "graph_invalid_edge": "Invalid edge data",
+    "graph_invalid_positions": "The vertex positions do not match the graph",
+    "graph_read_error": "Could not read the graph file",
+    "graph_write_error": "Could not write the graph file",
+    "generate_vertex_count": "The number of vertices must be between 2 and 30",
+    "generate_edge_count": "Invalid number of edges",
+    "generate_weight_range": "Invalid weight range",
+    "mst_weight_overflow": "The total weight is outside the numeric range",
+    "history_list_load_error": "Could not load calculation history",
+    "history_not_found": "The calculation is no longer available in history",
+    "history_invalid": "The saved calculation is damaged or does not match the graph",
+    "history_save_pending": "History saves pending: {count}",
+    "history_save_failed": "History saves unconfirmed due to an error: {count}",
+    "history_save_unconfirmed": "History saves exceeded the shutdown deadline: {count}",
+    "history_save_success": "Calculation saved to history",
+})
+
 def translate(key: str, language: str = "ru") -> str:
     return TRANSLATIONS[language][key]
 

@@ -10,3 +10,7 @@ class VertexAlreadyExistsError(GraphError):
 
 class VertexNotFoundError(GraphError):
     pass
+
+
+class GraphFormatError(GraphError, ValueError):
+    pass

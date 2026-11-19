@@ -1,6 +1,6 @@
 from app.core.disjoint_set import DisjointSet
 from app.core.exceptions import GraphError
-from app.core.graph import Graph
+from app.core.graph import Graph, check_total_weight
 from app.core.algorithms.result import AlgorithmStep, MSTResult
 
 def kruskal(graph: Graph) -> MSTResult:
@@ -29,4 +29,5 @@ def kruskal(graph: Graph) -> MSTResult:
     if len(selected_edges) != len(graph.vertices) - 1:
         raise GraphError("Невозможно построить остов: граф несвязный", code="graph_disconnected")
 
+    check_total_weight(total_weight)
     return MSTResult(tuple(selected_edges), total_weight, tuple(steps))

@@ -1,3 +1,4 @@
+import psycopg
 
 from app.views.calculations_loader import CalculationsLoader, CalculationDetailsLoader
 from app.views.event_logs_loader import EventLogsLoader
@@ -50,13 +51,28 @@ def test_calculation_details_loader_success(monkeypatch):
 def test_calculation_details_loader_failure(monkeypatch):
     failed = []
 
-    monkeypatch.setattr("app.views.calculations_loader.get_calculation_by_id", lambda calculation_id: None)
+    def failed_query(calculation_id):
+        raise psycopg.OperationalError("offline")
+
+    monkeypatch.setattr("app.views.calculations_loader.get_calculation_by_id", failed_query)
 
     loader = CalculationDetailsLoader(999)
     loader.failed.connect(lambda: failed.append(True))
     loader.run()
 
     assert failed == [True]
+
+
+def test_calculation_details_loader_not_found(monkeypatch):
+    outcomes = []
+    monkeypatch.setattr("app.views.calculations_loader.get_calculation_by_id", lambda calculation_id: None)
+    loader = CalculationDetailsLoader(999)
+    loader.missing.connect(lambda: outcomes.append("missing"))
+    loader.failed.connect(lambda: outcomes.append("failed"))
+
+    loader.run()
+
+    assert outcomes == ["missing"]
 
 
 def test_event_logs_loader_success(monkeypatch):

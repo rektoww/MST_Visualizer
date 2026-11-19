@@ -1,4 +1,5 @@
 from PyQt6.QtCore import QThread, pyqtSignal
+import psycopg
 
 from app.database.calculations import get_calculations, get_calculation_by_id
 
@@ -19,15 +20,20 @@ class CalculationsLoader(QThread):
 class CalculationDetailsLoader(QThread):
     loaded = pyqtSignal(dict)
     failed = pyqtSignal()
+    missing = pyqtSignal()
 
     def __init__(self, calculation_id: int, parent=None):
         super().__init__(parent)
         self.calculation_id = calculation_id
 
     def run(self) -> None:
-        calculation = get_calculation_by_id(self.calculation_id)
+        try:
+            calculation = get_calculation_by_id(self.calculation_id)
+        except psycopg.Error:
+            self.failed.emit()
+            return
 
         if calculation is None:
-            self.failed.emit()
+            self.missing.emit()
         else:
             self.loaded.emit(calculation)

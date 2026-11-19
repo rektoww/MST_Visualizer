@@ -5,5 +5,5 @@ from dataclasses import dataclass
 class Edge:
     start: int
     end: int
-    weight: int
+    weight: float
 
